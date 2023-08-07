@@ -1,0 +1,3 @@
+- maybe dont renumber vertices in input.cu
+  - remeber to change to uint32_t then
+  - sort on gpu
