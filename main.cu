@@ -1,12 +1,9 @@
 #include <iostream>
 
-#include "input.h"
+#include "input.cuh"
 
 int main() {
-    std::map<std::uint32_t, std::vector<uint32_t>> neigh = getGraph();
-    for(const auto& v : neigh) {
-
-    }
+    Graph g = getGraph();
     return 0;
 }
 
