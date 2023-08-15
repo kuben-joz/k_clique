@@ -1,0 +1,21 @@
+{
+    "image":"hpc_cuda:latest",
+    "runArgs": [
+        // you have to pass what gpu you wan to CUDA interact with
+        "--gpus=all",
+        // add capacity and security-opt to enable debugging inside container
+        "--cap-add=SYS_PTRACE",
+        "--security-opt",
+        "seccomp=unconfined"
+    ],
+    "customizations": {
+        "vscode": {
+          "extensions": [      
+                "ms-vscode.cpptools",
+                "ms-vscode.cmake-tools",
+                "ms-vscode.cpptools-themes",
+                "vadimcn.vscode-lldb"
+            ]
+        }
+      }
+}
