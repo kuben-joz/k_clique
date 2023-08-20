@@ -5,6 +5,13 @@
 
 #include "constants.cuh"
 
+// hybrid csr/coo representation
+struct Graph{
+  thrust::device_vector<int> v1s; // v1s and v2s together form the coo representation
+  thrust::device_vector<int> v2s; // this is the equivalent of adjacency lists, part of both csr and coo
+  thrust::device_vector<int> row_ptr; // this is the standard row pointer from csr
+};
+
 #define X_TID (blockIdx.x*blockDim.x+threadIdx.x)
 #define Y_TID (blockIdx.y*blockDim.y+threadIdx.y)
 #define Z_TID (blockIdx.z*blockDim.z+threadIdx.z)
@@ -28,7 +35,7 @@ template<typename T>
   __host__ __device__
   T operator()(T lhs, T rhs) const
   {
-    return ((lhs % mod) + (rhs % mod)) % mod;
+    return ((lhs % g_const::mod) + (rhs % g_const::mod)) % g_const::mod;
   }
 };
 

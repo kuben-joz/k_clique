@@ -1,0 +1,30 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/**"
+            ],
+            "defines": [],
+            "intelliSenseMode": "linux-gcc-x64"
+        },
+        {
+            "name": "cuda",
+            "includePath": [
+                "${workspaceFolder}/**"
+            ],
+            "defines": [],
+            "compilerPath": "/usr/local/cuda/bin/nvcc",
+            "intelliSenseMode": "${default}",
+            "compilerArgs": [
+                "-DDEBUG",
+                "-g",
+                "-arch=sm_60"
+            ],
+            "cppStandard": "gnu++11",
+            "cStandard": "gnu11",
+            "configurationProvider": "ms-vscode.makefile-tools"
+        }
+    ],
+    "version": 4
+}

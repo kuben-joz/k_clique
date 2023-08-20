@@ -1,5 +1,5 @@
 {
-    "image":"hpc_cuda:latest",
+    "image": "hpc_cuda:latest",
     "runArgs": [
         // you have to pass what gpu you wan to CUDA interact with
         "--gpus=all",
@@ -10,12 +10,10 @@
     ],
     "customizations": {
         "vscode": {
-          "extensions": [      
-                "ms-vscode.cpptools",
-                "ms-vscode.cmake-tools",
-                "ms-vscode.cpptools-themes",
-                "vadimcn.vscode-lldb"
-            ]
+            "extensions": [
+				"ms-vscode.cpptools-extension-pack",
+				"NVIDIA.nsight-vscode-edition"
+			]
         }
-      }
+    }
 }

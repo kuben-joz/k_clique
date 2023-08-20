@@ -10,3 +10,6 @@
 #include <thrust/iterator/counting_iterator.h>
 #include <thrust/tuple.h>
 #include <thrust/functional.h>
+
+
+int directGraph(Graph g);
