@@ -15,6 +15,7 @@
   - dense histogram works for isolated vertices
 
   ## optim
+  - don't calculate result for cliques size 1 and 2
   - consts for numer of edges etc.
   - texture memory for edges that are close 
   - for each with atomics instead of reduce by eky
@@ -23,9 +24,6 @@
   - https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#thread-block-clusters
   - --use_fast_math
   - --compiler-options "-fopenmp -fexceptions -ffast-math -g -Wall"
-  - graph in texture memory (its just global memory)
-  - check assembly in direct.cu
 
 ## CRITICAL
-
-currently only using one block, use more for count_cliques i.e. one per vertex
+  - don't calculate result for cliques size 1 and 2

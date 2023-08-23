@@ -13,8 +13,13 @@ namespace cg = cooperative_groups;
 
 const int tile_size = 4;
 
-__device__ unsigned int neigh_bitmasks[g_const::blocks_per_grid][g_const::max_deg][(g_const::max_deg + 31) / 32];
-__device__ unsigned int lvl_bitmap[g_const::blocks_per_grid][g_const::threads_per_block / tile_size][g_const::max_clique_size - 4][(g_const::max_deg + 31) / 32]; // todo this might be +1, will be buggy regardless if I set max_clqiue_size ot 3 during testing
+__device__ unsigned int neigh_bitmaps[g_const::blocks_per_grid][g_const::max_deg][(g_const::max_deg + 31) / 32];
+__device__ unsigned int lvl_bitmap[g_const::blocks_per_grid][g_const::threads_per_block / tile_size][g_const::max_deg][(g_const::max_deg + 31) / 32];
+__device__ unsigned int lvl_pruned_bitmap[g_const::blocks_per_grid][g_const::threads_per_block / tile_size][g_const::max_deg][(g_const::max_deg + 31) / 32];
+__device__ int lvl_idx[g_const::blocks_per_grid][g_const::threads_per_block / tile_size][g_const::max_deg];
+__device__ int lvl_num_neighs[g_const::blocks_per_grid][g_const::threads_per_block / tile_size][g_const::max_deg];
+__device__ int lvl_num_pivots[g_const::blocks_per_grid][g_const::threads_per_block / tile_size][g_const::max_deg];
+__device__ int lvl_pivot[g_const::blocks_per_grid][g_const::threads_per_block / tile_size][g_const::max_deg];
 
 inline __device__ void modulo_add(cuda::atomic<int, cuda::thread_scope_block> &res, int val)
 {
@@ -88,94 +93,141 @@ __device__ void calculateIntersects(int v_idx, int *row_ptrs, int *v1s, int *v2s
         }
         for (int jj = tile.thread_rank(); jj < num_neighs_bitmap; jj += tile_sz)
         {
-            neigh_bitmasks[blockIdx.x][ii][jj] = current_neigh[jj];
+            neigh_bitmaps[blockIdx.x][ii][jj] = current_neigh[jj];
         }
         // tile.sync(); //todo I dont think this is neccesary
     }
     // block.sync(); //block sync below is sufficent
 
-    __shared__ cuda::atomic<int, cuda::thread_scope_block> num_cliques_total[g_const::max_clique_size]; // todo add up into global
+    __shared__ cuda::atomic<int, cuda::thread_scope_block> num_cliques_total[g_const::max_clique_size - 2]; // todo add up into global
     for (int ii = block.thread_rank(); ii < clique_size; ii += g_const::threads_per_block)
     {
         num_cliques_total[ii] = ii == 0;
     }
     block.sync();
-    __shared__ unsigned int current_lvl_bitmap[num_tiles][(g_const::max_deg + 31) / 32]; // 32 kibibytes so should fit, todo check
-    int lvl_idx[g_const::max_clique_size - 1];
-    int lvl_num_neighs[g_const::max_clique_size - 2];
+    __shared__ unsigned int current_lvl_bitmap[num_tiles][(g_const::max_deg + 31) / 32];
+    __shared__ unsigned int current_lvl_pruned_bitmap[num_tiles][(g_const::max_deg + 31) / 32];
     int current_level; // current level is counting cliques of size +3
+    int current_idx;
+    int current_num_neighs;
+    int current_num_pivots;
+    int current_pivot;
     for (int ii = tile_idx; ii < num_neighs; ii += num_tiles)
     {
         // *************  first level ***********************
-        lvl_idx[0] = 0;
+        cg::invoke_one(tile, [&]
+                       { lvl_idx[blockIdx.x][tile_idx][0] = 0; });
         current_level = 0;
+        current_num_pivots = 1; // todo chekc if 0
+        current_idx = -1;       // will be incrmeneted immediatelly to 0
+
         for (int jj = tile.thread_rank(); jj < num_neighs_bitmap; jj += tile_sz)
         {
-            current_lvl_bitmap[tile_idx][jj] = neigh_bitmasks[blockIdx.x][ii][jj];
+            current_lvl_bitmap[tile_idx][jj] = neigh_bitmaps[blockIdx.x][ii][jj];
         }
-
-        cg::invoke_one(tile, [&]
-                       { modulo_add(num_cliques_total[1], 1); });
         // ******************* implicit stack used from here on out *********************
         do
         {
-            while (lvl_idx[current_level] < num_neighs)
+            while (current_idx < num_neighs)
             {
-                int idx = lvl_idx[current_level]++;
-                if (idx == 0)
+                current_idx++;
+                if (current_idx == 0)
                 {
-                    lvl_idx[current_level + 1] = 0;
-                    lvl_num_neighs[current_level] = 0;
+                    cg::invoke_one(tile, [&]
+                                   { lvl_idx[blockIdx.x][tile_idx][current_level + 1] = 0; });
+                    int pivot;
+                    int pivot_overlap;
+                    for (int jj = 0; jj < num_neighs; jj++)
+                    {
+                        unsigned int temp = current_lvl_bitmap[tile_idx][jj / 32] & (1U << (jj % 32));
+                        if (!temp)
+                        {
+                            continue;
+                        }
+                        int overlap = 0;
+                        for (int kk = tile.thread_rank(); kk < num_neighs_bitmap; kk += tile_sz)
+                        {
+                            overlap += __popc(current_lvl_bitmap[tile_idx][kk] & neigh_bitmaps[blockIdx.x][ii][kk]);
+                        }
+                        overlap = cg::reduce(tile, overlap, cg::plus<int>());
+                        if (overlap > pivot_overlap)
+                        {
+                            pivot_overlap = overlap;
+                            pivot = jj;
+                        }
+                    }
                     for (int jj = tile.thread_rank(); jj < num_neighs_bitmap; jj += tile_sz)
                     {
-                        lvl_num_neighs[current_level] += __popc(current_lvl_bitmap[tile_idx][jj]);
+                        current_lvl_pruned_bitmap[tile_idx][jj] &= ~neigh_bitmaps[blockIdx.x][pivot][jj];
                     }
-                    lvl_num_neighs[current_level] = cg::reduce(tile, lvl_num_neighs[current_level], cg::plus<int>());
-                    if (lvl_num_neighs[current_level] > 0)
-                    {
-                        cg::invoke_one(tile, [&]
-                                       { modulo_add(num_cliques_total[current_level + 2], lvl_num_neighs[current_level]); });
-                    }
-                    if (current_level == clique_size - 3)
-                    { // max depth reached
-                        break;
-                    }
+                    current_num_neighs = pivot_overlap;
+                    current_pivot = pivot;
                 }
-                if (lvl_num_neighs[current_level] == 0)
+                if (current_num_neighs == 0)
                 {
                     break;
                 }
-                unsigned int temp = current_lvl_bitmap[tile_idx][idx / 32] & (1U << (idx % 32));
-                if (temp > 0)
+                unsigned int temp = current_lvl_pruned_bitmap[tile_idx][current_idx / 32] & (1U << (current_idx % 32));
+                if (temp)
                 {
-                    lvl_num_neighs[current_level]--;
-                    if (current_level > 0) // saves one transfer into global
+                    current_num_neighs--;
+                    int new_num_pivots = current_idx == current_pivot ? current_num_pivots + 1 : current_num_pivots;
+                    if (current_level + 4 - 3 <= new_num_pivots)
                     {
+                        if (current_level > 0) // saves one transfer into global
+                        {
+                            for (int jj = tile.thread_rank(); jj < num_neighs_bitmap; jj += tile_sz)
+                            {
+                                lvl_bitmap[blockIdx.x][tile_idx][current_level - 1][jj] = current_lvl_bitmap[tile_idx][jj];
+                            }
+                        }
+                        int next_num_neighs = 0;
                         for (int jj = tile.thread_rank(); jj < num_neighs_bitmap; jj += tile_sz)
                         {
-                            lvl_bitmap[blockIdx.x][tile_idx][current_level - 1][jj] = current_lvl_bitmap[tile_idx][jj];
-                            current_lvl_bitmap[tile_idx][jj] = current_lvl_bitmap[tile_idx][jj] & neigh_bitmasks[blockIdx.x][idx][jj];
+                            current_lvl_bitmap[tile_idx][jj] &= neigh_bitmaps[blockIdx.x][current_idx][jj];
+                            temp = current_idx / 32 == jj ? 1 : 0; // bit twiddling to ignore vertices that we covered earlier line 8 of pivoter alg in paper
+                            temp = (temp << (current_idx % 32)) - 1;
+                            temp = current_idx / 32 > jj ? 0 : temp;
+                            temp = temp & current_lvl_pruned_bitmap[tile_idx][jj];
+                            current_lvl_bitmap[tile_idx][jj] &= ~temp;
+                            next_num_neighs += __popc(current_lvl_bitmap[tile_idx][jj]);
                         }
-                    }
-                    else
-                    {
-                        for (int jj = tile.thread_rank(); jj < num_neighs_bitmap; jj += tile_sz)
+                        cg::reduce(tile, next_num_neighs, cg::plus<int>());
+                        if (next_num_neighs)
                         {
-                            current_lvl_bitmap[tile_idx][jj] = current_lvl_bitmap[tile_idx][jj] & neigh_bitmasks[blockIdx.x][idx][jj];
+                            for (int jj = tile.thread_rank(); jj < num_neighs_bitmap; jj += tile_sz)
+                            {
+                                lvl_pruned_bitmap[blockIdx.x][tile_idx][current_level][jj] = current_lvl_pruned_bitmap[tile_idx][jj];
+                            }
+                            cg::invoke_one(tile, [&]
+                                           { lvl_idx[blockIdx.x][tile_idx][current_level] = current_idx; });
+                            cg::invoke_one(tile, [&]
+                                           { lvl_num_neighs[blockIdx.x][tile_idx][current_level] = current_num_neighs; });
+                            cg::invoke_one(tile, [&]
+                                           { lvl_num_pivots[blockIdx.x][tile_idx][current_level] = current_num_pivots; });
+                            cg::invoke_one(tile, [&]
+                                           { lvl_pivot[blockIdx.x][tile_idx][current_level] = current_pivot; });
+                            current_level++;
+                        }
+                        else
+                        {
+                            int lim = current_level + 3 < clique_size ? current_level + 3 : clique_size;
+                            for(int jj = tile.thread_rank(); jj < lim; jj+=tile_sz) {
+
+                            }
                         }
                     }
-                    temp = 0;
-                    idx = 0;
-                    current_level++;
                 }
             }
             do
             {
                 current_level--;
-            } while (current_level >= 0 && lvl_num_neighs[current_level] == 0);
+            } while (current_level >= 0 && lvl_num_neighs[blockIdx.x][tile_idx][current_level] == 0);
             if (current_level >= 0) // putting this here saves clique_size transfers
             {
-                lvl_idx[current_level + 1] = 0;
+                cg::invoke_one(tile, [&]
+                               { lvl_idx[blockIdx.x][tile_idx][current_level + 1] = 0; });
+                current_num_neighs = lvl_num_neighs[blockIdx.x][tile_idx][current_level];
                 if (current_level > 0)
                 {
                     for (int jj = tile.thread_rank(); jj < num_neighs_bitmap; jj += tile_sz)
@@ -183,13 +235,21 @@ __device__ void calculateIntersects(int v_idx, int *row_ptrs, int *v1s, int *v2s
                         current_lvl_bitmap[tile_idx][jj] = lvl_bitmap[blockIdx.x][tile_idx][current_level - 1][jj]; // -1 as we only store levels greater than 0
                     }
                 }
-                else if (current_level == 0)
+                else
                 { // doing it this way saves one transfer into global
                     for (int jj = tile.thread_rank(); jj < num_neighs_bitmap; jj += tile_sz)
                     {
-                        current_lvl_bitmap[tile_idx][jj] = neigh_bitmasks[blockIdx.x][ii][jj];
+                        current_lvl_bitmap[tile_idx][jj] = neigh_bitmaps[blockIdx.x][ii][jj];
                     }
                 }
+                for (int jj = tile.thread_rank(); jj < num_neighs_bitmap; jj += tile_sz)
+                {
+                    current_lvl_pruned_bitmap[tile_idx][jj] = lvl_pruned_bitmap[blockIdx.x][tile_idx][current_level][jj];
+                }
+                current_idx = lvl_idx[blockIdx.x][tile_idx][current_level];
+                current_num_neighs = lvl_num_neighs[blockIdx.x][tile_idx][current_level];
+                current_num_pivots = lvl_num_pivots[blockIdx.x][tile_idx][current_level];
+                current_pivot = lvl_pivot[blockIdx.x][tile_idx][current_level];
             }
         } while (current_level >= 0);
         tile.sync();
