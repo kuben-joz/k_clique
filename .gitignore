@@ -1,3 +1,10 @@
 # Project exclude paths
-/cmake-build-debug/
+cmake-build-debug/
 scratch.cpp
+in/
+out/
+build/
+CMakeFiles/
+cmake_install.cmake
+CMakeCache.txt
+k-clique

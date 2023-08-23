@@ -12,6 +12,18 @@ struct Graph{
   thrust::device_vector<int> row_ptr; // this is the standard row pointer from csr
 };
 
+static void HandleError(cudaError_t err,
+						const char *file,
+						int line) {
+	if (err != cudaSuccess) {
+		printf( "%s in %s at line %d\n", cudaGetErrorString(err), 
+				file, line );
+		exit( EXIT_FAILURE );
+	}
+}
+
+#define HANDLE_ERROR( err) (HandleError( err, __FILE__, __LINE__ ))
+
 #define X_TID (blockIdx.x*blockDim.x+threadIdx.x)
 #define Y_TID (blockIdx.y*blockDim.y+threadIdx.y)
 #define Z_TID (blockIdx.z*blockDim.z+threadIdx.z)

@@ -12,4 +12,4 @@
 #include <thrust/functional.h>
 
 
-int directGraph(Graph g);
+int directGraph(Graph& g);

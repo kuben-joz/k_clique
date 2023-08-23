@@ -12,6 +12,7 @@
 
   ## tests
   - empty graph
+  - dense histogram works for isolated vertices
 
   ## optim
   - consts for numer of edges etc.
@@ -20,3 +21,11 @@
   - host malloc to not page memory upon reading
   - maybe even jsut gather straight into pointer array
   - https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#thread-block-clusters
+  - --use_fast_math
+  - --compiler-options "-fopenmp -fexceptions -ffast-math -g -Wall"
+  - graph in texture memory (its just global memory)
+  - check assembly in direct.cu
+
+## CRITICAL
+
+currently only using one block, use more for count_cliques i.e. one per vertex

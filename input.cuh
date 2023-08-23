@@ -5,5 +5,4 @@
 
 #include "util.cuh"
 
-
-Graph getGraph();
+Graph getGraph(char *filename);

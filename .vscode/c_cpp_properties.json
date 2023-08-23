@@ -19,11 +19,12 @@
             "compilerArgs": [
                 "-DDEBUG",
                 "-g",
+                "-G",
                 "-arch=sm_60"
             ],
-            "cppStandard": "gnu++11",
-            "cStandard": "gnu11",
-            "configurationProvider": "ms-vscode.makefile-tools"
+            "cppStandard": "gnu++17",
+            "cStandard": "gnu17",
+            "configurationProvider": "ms-vscode.cmake-tools"
         }
     ],
     "version": 4
