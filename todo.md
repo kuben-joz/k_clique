@@ -27,3 +27,10 @@
 
 ## CRITICAL
   - don't calculate result for cliques size 1 and 2
+
+
+## report
+didnt use grid synchronisation as it seemed slower
+
+
+![Alt text](image.png)
