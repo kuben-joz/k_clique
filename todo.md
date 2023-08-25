@@ -8,6 +8,8 @@
   - add sub threadgroup sync
   - template for printing vector
 
+  - cliques of size 3 with normal algorithm for orientation
+
 
 
   ## tests
@@ -24,6 +26,13 @@
   - https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#thread-block-clusters
   - --use_fast_math
   - --compiler-options "-fopenmp -fexceptions -ffast-math -g -Wall"
+
+  - parity optim for non pivot version
+  - parity optim for pruned bitmap for pivot version
+  - extend it for as many levels as possible, at least tile size for non pruned bitmap, also only save to global once required
+  - same can be done for rest of stack variables
+
+  - move bloocks and tiles to main level so we dont re init them every time we enter new vertex
 
 ## CRITICAL
   - don't calculate result for cliques size 1 and 2
