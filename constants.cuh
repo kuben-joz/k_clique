@@ -4,8 +4,7 @@ namespace g_const
 {
     extern __constant__ int num_edges_dev;
     extern __constant__ int num_vertices_dev;
-    extern __constant__ int mod;
-    extern __constant__ int max_clique;
+    const int mod = 1000000000;
     extern int num_edges_host;
     extern int num_vertices_host;
     const int max_deg = 1024;

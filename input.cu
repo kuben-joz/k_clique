@@ -16,8 +16,6 @@ using namespace std;
 
 namespace g_const
 {
-    __constant__ int mod = 1000000000;
-    __constant__ int max_clique = 5;
     __constant__ int num_edges_dev = 0;
     __constant__ int num_vertices_dev = 0;
     int num_edges_host = 0;

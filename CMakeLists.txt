@@ -9,7 +9,8 @@ find_package(CUDAToolkit)
 
 set(CMAKE_CUDA_STANDARD 17)
 # -g -G
-set(CMAKE_CUDA_FLAGS ${CMAKE_CUDA_FLAGS} "-O3 -ffast-math -arch=sm_60 -gencode arch=compute_60,code=sm_60")
+#set(CMAKE_CUDA_FLAGS ${CMAKE_CUDA_FLAGS} "-O3 -ffast-math -arch=sm_60 -gencode arch=compute_60,code=sm_60")
+set(CMAKE_CUDA_FLAGS ${CMAKE_CUDA_FLAGS} "-g -G -Wall -Wextra -arch=sm_60 -gencode arch=compute_60,code=sm_60")
 
 add_executable(k-clique)
 target_sources(k-clique PRIVATE constants.cuh count_cliques.cuh count_cliques.cu

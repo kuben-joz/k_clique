@@ -31,11 +31,15 @@
   - parity optim for pruned bitmap for pivot version
   - extend it for as many levels as possible, at least tile size for non pruned bitmap, also only save to global once required
   - same can be done for rest of stack variables
+  - current_lvl_idx +1 doesnt need to be set to 0 beforehand, we can just set current_idx = 0
+  - adjust current lvl btimap to 2 is tile size is 1
+  - add __restrict__
 
   - move bloocks and tiles to main level so we dont re init them every time we enter new vertex
 
 ## CRITICAL
   - don't calculate result for cliques size 1 and 2
+  - for ec num_neighs is the number of 3 clqiues so dont count those either
 
 
 ## report

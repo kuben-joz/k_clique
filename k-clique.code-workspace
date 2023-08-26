@@ -83,7 +83,8 @@
 			"typeinfo": "cpp",
 			"valarray": "cpp",
 			"variant": "cpp",
-			"__config": "cpp"
+			"__config": "cpp",
+			"__verbose_abort": "cpp"
 		},
 	},
 }
