@@ -13,7 +13,7 @@
 namespace cg = cooperative_groups;
 namespace stdc = cuda::std;
 
-const int tile_size = 4;
+const int tile_size = 32;
 
 __device__ unsigned int neigh_bitmap_lvl1[g_const::blocks_per_grid][g_const::max_deg][(g_const::max_deg + 31) / 32];
 __device__ unsigned int neigh_bitmap[g_const::blocks_per_grid][g_const::max_deg][(g_const::max_deg + 31) / 32];
@@ -124,6 +124,8 @@ __device__ void calculateIntersects(const int v_idx, const int *__restrict__ row
 
         typedef cub::BlockScan<int, g_const::threads_per_block, cub::BLOCK_SCAN_RAKING> BlockScanT32; // todo try others https://github.com/dmlc/cub/blob/master/cub/block/block_scan.cuh
         typedef cub::BlockScan<long long, g_const::threads_per_block, cub::BLOCK_SCAN_RAKING> BlockScanT64;
+        typedef cub::BlockReduce<int, g_const::threads_per_block, cub::BLOCK_REDUCE_RAKING_COMMUTATIVE_ONLY> BlockReduceT;
+
 
         __shared__ union SharedStorage3
         {
@@ -131,6 +133,7 @@ __device__ void calculateIntersects(const int v_idx, const int *__restrict__ row
             // int n_C_k_factors[2][g_const::max_deg];
             typename BlockScanT32::TempStorage scan32;
             typename BlockScanT64::TempStorage scan64;
+            typename BlockReduceT::TempStorage reduce;
         } shr_str3;
 
         for (int ii = block.thread_rank(); ii < num_neighs_bitmap_lvl1; ii += g_const::threads_per_block)
@@ -143,7 +146,7 @@ __device__ void calculateIntersects(const int v_idx, const int *__restrict__ row
         cg::invoke_one(block, [&]
                        { tmp_atomic.store(0, cuda::memory_order_relaxed); });
         block.sync();
-        for (int ii = block.thread_rank(); ii < num_neighs_lvl1; ii += g_const::blocks_per_grid)
+        for (int ii = block.thread_rank(); ii < num_neighs_lvl1; ii += g_const::threads_per_block)
         {
             unsigned int temp = shr_str2.root_neigh_bitmap[ii / 32] & (1U << (ii % 32));
             if (temp)
@@ -155,13 +158,14 @@ __device__ void calculateIntersects(const int v_idx, const int *__restrict__ row
         }
         block.sync();
         num_neighs = tmp_atomic.load(cuda::memory_order_relaxed);
+        assert(num_neighs <= num_neighs_lvl1);
         int num_neighs_bitmap = (num_neighs + 31) / 32;
         for (int ii = tile_idx; ii < num_neighs; ii += num_tiles)
         {
             int old_idx = neigh_ids[ii];
             for (int jj = tile.thread_rank(); jj < num_neighs_bitmap_lvl1; jj += tile_sz)
             {
-                shr_str1.temp_lvl1_bitmap[tile_idx][jj] = neigh_bitmap_lvl1[block.group_index().x][old_idx][jj] & shr_str2.current_lvl_pruned_bitmap[jj];
+                shr_str1.temp_lvl1_bitmap[tile_idx][jj] = neigh_bitmap_lvl1[block.group_index().x][old_idx][jj] & shr_str2.root_neigh_bitmap[jj];
             }
             unsigned int current_neigh[(g_const::max_deg + 31) / 32];
             for (int jj = 0; jj < num_neighs_bitmap; jj++)
@@ -195,48 +199,14 @@ __device__ void calculateIntersects(const int v_idx, const int *__restrict__ row
         }
 
         unsigned int temp_bitmap[(g_const::max_deg + 31) / 32];
-        /*
-        int lim = num_neighs_bitmap % num_tiles;
-        lim = num_neighs_bitmap + (num_tiles - lim); // todo change all of this to 32
-        for (int ii = tile_idx; ii < lim; ii += num_tiles)
+        block.sync();
+        for (int ii = tile_idx; ii < (32 * num_neighs_bitmap); ii += num_tiles)
         {
-            for (int jj = 0; jj < 32; jj++)
+            int v1 = ((ii % num_neighs_bitmap) * 32) + ii / num_neighs_bitmap; // avoid bank collisions as much as possible
+            if (v1 >= num_neighs)
             {
-                if (ii < num_neighs_bitmap)
-                {
-                    for (int kk = 0; kk < num_neighs_bitmap; kk++)
-                    {
-                        temp_bitmap[kk] = 0;
-                    }
-                    for (int kk = tile.thread_rank(); kk < num_neighs; kk += tile_sz)
-                    {
-                        unsigned int temp = neigh_bitmap[block.group_index().x][kk][ii] & (1U << (jj));
-                        if (temp)
-                        {
-                            temp_bitmap[kk / 32] |= 1U << (kk % 32);
-                        }
-                    }
-                    for (int kk = 0; kk < num_neighs_bitmap; kk++)
-                    {
-                        temp_bitmap[kk] = cg::reduce(tile, temp_bitmap[kk], cg::bit_or<unsigned int>());
-                    }
-                }
-                block.sync();
-                if (ii < num_neighs_bitmap)
-                {
-                    for (int kk = tile.thread_rank(); kk < num_neighs; kk += tile_sz)
-                    {
-                        neigh_bitmap[block.group_index().x][ii * 32 + jj][kk] = temp_bitmap[kk];
-                    }
-                }
-                block.sync();
+                continue;
             }
-        }
-        */
-
-        for (int ii = tile_idx; ii < num_neighs; ii += num_tiles)
-        {
-            int v1 = ((ii * 32) % num_neighs) + ((ii * 32) / num_neighs); // avoid bank conflicts
             for (int jj = 0; jj < num_neighs_bitmap; jj++)
             {
                 temp_bitmap[jj] = 0;
@@ -267,10 +237,10 @@ __device__ void calculateIntersects(const int v_idx, const int *__restrict__ row
 
         // ###############################################################################################################
 
-        __shared__ cuda::atomic<int, cuda::thread_scope_block> num_cliques_total[g_const::max_clique_size - 4]; // todo add up into global
+        __shared__ int num_cliques_total[g_const::max_clique_size - 3]; // todo add up into global
         for (int ii = block.thread_rank(); ii < clique_size; ii += g_const::threads_per_block)
         {
-            num_cliques_total[ii].store(ii == 3 ? num_neighs : 0, cuda::memory_order_relaxed);
+            num_cliques_total[ii] = ii == 0 ? num_neighs % g_const::mod : 0;
         }
         block.sync();
 
@@ -285,9 +255,9 @@ __device__ void calculateIntersects(const int v_idx, const int *__restrict__ row
                        { lvl_idx[block.group_index().x][0] = 0; });
         current_level = 0;
         current_num_pivots = 1; // todo chekc if 0
-        current_idx = -1;       // will be incrmeneted immediatelly to 0
+        current_idx = 0;        // will be incrmeneted immediatelly to 0
 
-        for (int jj = block.thread_rank(); jj < num_neighs_bitmap; jj += g_const::blocks_per_grid)
+        for (int jj = block.thread_rank(); jj < num_neighs_bitmap; jj += g_const::threads_per_block)
         {
             shr_str1.current_lvl_bitmap[parity][jj] = ~0U;
         }
@@ -296,13 +266,10 @@ __device__ void calculateIntersects(const int v_idx, const int *__restrict__ row
         {
             while (current_idx < num_neighs)
             {
-                current_idx++;
                 if (current_idx == 0)
                 {
-                    // cg::invoke_one(block, [&]
-                    //                { lvl_idx[block.group_index().x][current_level + 1] = 0; }); // todo I think we can remove
-                    int pivot;
-                    int pivot_overlap;
+                    int pivot = -1;
+                    int pivot_overlap = 0;
                     for (int jj = tile_idx; jj < num_neighs; jj += num_tiles)
                     {
                         unsigned int temp = shr_str1.current_lvl_bitmap[parity][jj / 32] & (1U << (jj % 32));
@@ -322,8 +289,8 @@ __device__ void calculateIntersects(const int v_idx, const int *__restrict__ row
                             pivot = jj;
                         }
                     }
-                    int temp_pivot_overlap = cg::reduce(block, pivot_overlap, cg::greater<int>());
-                    if (temp_pivot_overlap == pivot_overlap)
+                    int temp_pivot_overlap = cg::reduce(tile, pivot_overlap, cg::greater<int>());
+                    if (pivot >= 0 && temp_pivot_overlap == pivot_overlap)
                     { // if two pivots have the same overlap we choose one at random
                         cg::invoke_one(tile, [&]
                                        { tmp_atomic.store(pivot, cuda::memory_order_relaxed); });
@@ -335,7 +302,7 @@ __device__ void calculateIntersects(const int v_idx, const int *__restrict__ row
 
                     for (int jj = block.thread_rank(); jj < num_neighs_bitmap; jj += g_const::threads_per_block)
                     {
-                        shr_str2.current_lvl_pruned_bitmap[jj] &= ~neigh_bitmap[block.group_index().x][pivot][jj];
+                        shr_str2.current_lvl_pruned_bitmap[jj] = shr_str1.current_lvl_bitmap[parity][jj] & ~neigh_bitmap[block.group_index().x][pivot][jj];
                     }
                     current_num_neighs = pivot_overlap;
                     current_pivot = pivot;
@@ -356,14 +323,14 @@ __device__ void calculateIntersects(const int v_idx, const int *__restrict__ row
                         for (int jj = block.thread_rank(); jj < num_neighs_bitmap; jj += g_const::threads_per_block)
                         { // current_lvl_bitmap[1] not zero to compute temprarily the I' in line 8 of figure 3 in paper
                             shr_str1.current_lvl_bitmap[!parity][jj] = shr_str1.current_lvl_bitmap[parity][jj] & neigh_bitmap[block.group_index().x][current_idx][jj];
-                            temp = (current_idx / 32) == jj ? 1 : 0; // bit twiddling to ignore vertices that we covered earlier line 8 of pivoter alg in paper
-                            temp = (temp << (current_idx % 32)) - 1;
-                            temp = (current_idx / 32) > jj ? 0 : temp;
+                            temp = (current_idx / 32) == jj ? 1U : 0U; // bit twiddling to ignore vertices that we covered earlier line 8 of pivoter alg in paper
+                            temp = (temp << (current_idx % 32)) - 1;   // flips to ~0U if temp = 0
+                            temp = (current_idx / 32) > jj ? 0U : temp;
                             temp = temp & shr_str2.current_lvl_pruned_bitmap[jj];
                             shr_str1.current_lvl_bitmap[!parity][jj] &= ~temp;
                             next_num_neighs += __popc(shr_str1.current_lvl_bitmap[!parity][jj]);
                         }
-                        next_num_neighs = cg::reduce(tile, next_num_neighs, cg::plus<int>());
+                        next_num_neighs = cg::reduce(block, next_num_neighs, cg::plus<int>());
                         if (next_num_neighs)
                         {
                             if (current_level > 0) // saves one transfer into global
@@ -378,16 +345,17 @@ __device__ void calculateIntersects(const int v_idx, const int *__restrict__ row
                                 lvl_pruned_bitmap[block.group_index().x][current_level][jj] = shr_str2.current_lvl_pruned_bitmap[jj];
                             }
                             parity = !parity;
-                            cg::invoke_one(tile, [&]
-                                           { lvl_idx[block.group_index().x][current_level] = current_idx; });
-                            cg::invoke_one(tile, [&]
+                            cg::invoke_one(block, [&]
+                                           { lvl_idx[block.group_index().x][current_level] = ++current_idx; });
+                            cg::invoke_one(block, [&]
                                            { lvl_num_neighs[block.group_index().x][current_level] = current_num_neighs; });
-                            cg::invoke_one(tile, [&]
+                            cg::invoke_one(block, [&]
                                            { lvl_num_pivots[block.group_index().x][current_level] = current_num_pivots; });
-                            cg::invoke_one(tile, [&]
+                            cg::invoke_one(block, [&]
                                            { lvl_pivot[block.group_index().x][current_level] = current_pivot; });
-                            current_num_neighs = next_num_neighs;
+                            // current_num_neighs = next_num_neighs; this is a different num_neighs, unpruned
                             current_idx = 0;
+                            current_num_pivots = new_num_pivots;
                             current_level++;
                         }
                         else // level + 1 is always countign at least 4 clqiues
@@ -395,11 +363,11 @@ __device__ void calculateIntersects(const int v_idx, const int *__restrict__ row
                             // reusing neigh_ids_rev to store partial results
                             // https://math.stackexchange.com/questions/70125/calculating-n-choose-k-mod-one-million
                             int n = new_num_pivots;
-                            const int per_thread = (g_const::max_deg + g_const::threads_per_block - 1) / g_const::threads_per_block;
+                            const int per_thread = (g_const::max_deg + g_const::threads_per_block - 1) / g_const::threads_per_block; // todo check this is right
                             int temp_twos[per_thread];
                             int temp_fives[per_thread];
                             long long temp_res[per_thread];
-                            for (int ii = block.thread_rank(); ii <= g_const::max_deg; ii += g_const::threads_per_block)
+                            for (int ii = block.thread_rank(); ii < g_const::max_deg; ii += g_const::threads_per_block)
                             {
                                 int k = (per_thread * block.thread_rank() + (ii / g_const::threads_per_block));
                                 // n_C_k[k] = k == 0; // n choose 0 is 1
@@ -428,7 +396,7 @@ __device__ void calculateIntersects(const int v_idx, const int *__restrict__ row
                                         denom /= 2;
                                         num_twos--;
                                     }
-                                    while (!(denom % 2))
+                                    while (!(denom % 5))
                                     {
                                         denom /= 5;
                                         num_fives--;
@@ -449,9 +417,9 @@ __device__ void calculateIntersects(const int v_idx, const int *__restrict__ row
                                         stdc::tie(y, y1) = stdc::make_tuple(y1, y - q * y1);
                                         stdc::tie(a, b) = stdc::make_tuple(b, a - q * b);
                                     }
-                                    assert(a != 1);
-                                    unsigned long long res = (x % g_const::mod + g_const::mod) % g_const::mod;
-                                    unsigned long long temp = numer % g_const::mod; // todo I dont think mod is neccesary here numer % mod
+                                    assert(a == 1);
+                                    long long res = (x % g_const::mod + g_const::mod) % g_const::mod;
+                                    long long temp = numer % g_const::mod; // todo I dont think mod is neccesary here numer % mod
                                     res = (res * temp) % g_const::mod;
                                     temp_res[k % per_thread] = res;
                                 }
@@ -481,16 +449,17 @@ __device__ void calculateIntersects(const int v_idx, const int *__restrict__ row
                             for (int ii = block.thread_rank(); ii <= g_const::max_deg; ii += g_const::threads_per_block)
                             {
                                 int k = (per_thread * block.thread_rank() + (ii / g_const::threads_per_block));
-                                if (k >= 4 && k <= clique_size)
+                                int current_clique_size = current_level + 4 - k;
+                                if (current_clique_size >= 4 && current_clique_size <= clique_size)
                                 {
-                                    moduloAdd(num_cliques_total[k - 4], temp_twos[k % per_thread]);
+                                    num_cliques_total[current_clique_size - 3] = (num_cliques_total[current_clique_size - 3] + (int)temp_res[k % per_thread]) % g_const::mod;
                                 }
                             }
                         }
                     }
                 }
+                current_idx++;
             }
-            int prev_level = current_level;
             do
             {
                 current_level--;
@@ -500,16 +469,12 @@ __device__ void calculateIntersects(const int v_idx, const int *__restrict__ row
                 // cg::invoke_one(tile, [&]
                 //                { lvl_idx[block.group_index().x][current_level + 1] = 0; });
                 current_num_neighs = lvl_num_neighs[block.group_index().x][current_level];
-                if (current_level > 0 && prev_level - 1 != current_level)
+                if (current_level > 0)
                 {
                     for (int jj = block.thread_rank(); jj < num_neighs_bitmap; jj += g_const::threads_per_block)
                     {
                         shr_str1.current_lvl_bitmap[parity][jj] = lvl_bitmap[block.group_index().x][current_level - 1][jj]; // -1 as we only store levels greater than 0
                     }
-                }
-                else if (prev_level - 1 == current_level)
-                {
-                    parity = !parity;
                 }
                 else
                 { // doing it this way saves one transfer into global
@@ -531,17 +496,17 @@ __device__ void calculateIntersects(const int v_idx, const int *__restrict__ row
 
         block.sync();
 
-        for (int ii = block.thread_rank(); ii < clique_size; ii += block.size())
+        for (int ii = block.thread_rank(); ii < clique_size - 3; ii += block.size())
         {
-            int val = num_cliques_total[ii].load(cuda::memory_order_relaxed);
+            int val = num_cliques_total[ii];
             int expected = 0;
             int desired = val;
-            int old = atomicCAS(&res[ii], expected, desired);
+            int old = atomicCAS(&res[ii + 2], expected, desired);
             while (old != expected)
             {
                 expected = old;
                 desired = (old + val) % g_const::mod;
-                old = atomicCAS(&res[ii], expected, desired);
+                old = atomicCAS(&res[ii + 2], expected, desired);
             }
         }
     }

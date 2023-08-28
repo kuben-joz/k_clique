@@ -40,6 +40,7 @@
 ## CRITICAL
   - don't calculate result for cliques size 1 and 2
   - for ec num_neighs is the number of 3 clqiues so dont count those either
+  - investigate num neighs
 
 
 ## report

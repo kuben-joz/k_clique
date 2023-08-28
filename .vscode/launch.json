@@ -9,7 +9,7 @@
             "type": "cuda-gdb",
             "request": "launch",
             "program": "${workspaceFolder}/k-clique",
-            "args": "in/test1.in 6",
+            "args": "in/out2.txt 10 out/temp.txt",
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "preLaunchTask": "cmake build"
