@@ -13,7 +13,7 @@
 namespace cg = cooperative_groups;
 namespace stdc = cuda::std;
 
-const int tile_size = 32;
+const int tile_size = 4;
 
 __device__ unsigned int neigh_bitmap_lvl1[g_const::blocks_per_grid][g_const::max_deg][(g_const::max_deg + 31) / 32];
 __device__ unsigned int neigh_bitmap[g_const::blocks_per_grid][g_const::max_deg][(g_const::max_deg + 31) / 32];
@@ -105,11 +105,12 @@ __device__ void calculateIntersects(const int v_idx, const int *__restrict__ row
             neigh_bitmap_lvl1[block.group_index().x][ii][jj] = current_neigh[jj];
         }
     }
+    block.sync();
     // ###################################################################################################################
     for (int bb = block_idx; bb < num_neighs_lvl1; bb += g_const::blocks_per_grid)
     {
-        __shared__ int neigh_ids[g_const::max_deg];
 
+        __shared__ int neigh_ids[g_const::max_deg];
         __shared__ union SharedStorage1
         {
             unsigned int current_lvl_bitmap[2][(g_const::max_deg + 31) / 32];
@@ -126,7 +127,6 @@ __device__ void calculateIntersects(const int v_idx, const int *__restrict__ row
         typedef cub::BlockScan<long long, g_const::threads_per_block, cub::BLOCK_SCAN_RAKING> BlockScanT64;
         typedef cub::BlockReduce<int, g_const::threads_per_block, cub::BLOCK_REDUCE_RAKING_COMMUTATIVE_ONLY> BlockReduceT;
 
-
         __shared__ union SharedStorage3
         {
             int neigh_ids_rev[g_const::max_deg];
@@ -141,8 +141,9 @@ __device__ void calculateIntersects(const int v_idx, const int *__restrict__ row
             shr_str2.root_neigh_bitmap[ii] = neigh_bitmap_lvl1[block.group_index().x][bb][ii];
         }
         // todo what if only cliques sof size 3?
-        int num_neighs;
+
         __shared__ cuda::atomic<int, cuda::thread_scope_block> tmp_atomic; // reused later
+        __shared__ int tmp_shr_int;
         cg::invoke_one(block, [&]
                        { tmp_atomic.store(0, cuda::memory_order_relaxed); });
         block.sync();
@@ -157,9 +158,12 @@ __device__ void calculateIntersects(const int v_idx, const int *__restrict__ row
             }
         }
         block.sync();
-        num_neighs = tmp_atomic.load(cuda::memory_order_relaxed);
+        cg::invoke_one(block, [&]
+                       { tmp_shr_int = tmp_atomic.load(cuda::memory_order_relaxed); });
+        block.sync();
+        const int num_neighs = tmp_shr_int;
         assert(num_neighs <= num_neighs_lvl1);
-        int num_neighs_bitmap = (num_neighs + 31) / 32;
+        const int num_neighs_bitmap = (num_neighs + 31) / 32;
         for (int ii = tile_idx; ii < num_neighs; ii += num_tiles)
         {
             int old_idx = neigh_ids[ii];
@@ -236,17 +240,18 @@ __device__ void calculateIntersects(const int v_idx, const int *__restrict__ row
         }
 
         // ###############################################################################################################
-
-        __shared__ int num_cliques_total[g_const::max_clique_size - 3]; // todo add up into global
+        __shared__ int num_cliques_total[g_const::max_clique_size - 2]; // todo add -2 at the end
         for (int ii = block.thread_rank(); ii < clique_size; ii += g_const::threads_per_block)
         {
             num_cliques_total[ii] = ii == 0 ? num_neighs % g_const::mod : 0;
+            // num_cliques_total[ii] = 0;
         }
+
         block.sync();
 
         int current_level; // current level is counting cliques of size +2
         int current_idx;
-        int current_num_neighs;
+        int current_num_neighs = num_neighs;
         int current_num_pivots;
         int current_pivot;
         int parity = 0;
@@ -254,8 +259,8 @@ __device__ void calculateIntersects(const int v_idx, const int *__restrict__ row
         cg::invoke_one(block, [&]
                        { lvl_idx[block.group_index().x][0] = 0; });
         current_level = 0;
-        current_num_pivots = 1; // todo chekc if 0
-        current_idx = 0;        // will be incrmeneted immediatelly to 0
+        current_num_pivots = 0;
+        current_idx = 0;
 
         for (int jj = block.thread_rank(); jj < num_neighs_bitmap; jj += g_const::threads_per_block)
         {
@@ -268,11 +273,20 @@ __device__ void calculateIntersects(const int v_idx, const int *__restrict__ row
             {
                 if (current_idx == 0)
                 {
+                    assert(current_num_neighs > 0);
                     int pivot = -1;
-                    int pivot_overlap = 0;
-                    for (int jj = tile_idx; jj < num_neighs; jj += num_tiles)
+                    int pivot_overlap = -1; // edge case of overlap of 0 avoided
+                    // todo remove
+                    cg::invoke_one(block, [&]
+                                   { tmp_atomic.store(-1, cuda::memory_order_relaxed); }); // todo remove
+                    for (int jj = tile_idx; jj < (num_neighs_bitmap * 32); jj += num_tiles)
                     {
-                        unsigned int temp = shr_str1.current_lvl_bitmap[parity][jj / 32] & (1U << (jj % 32));
+                        int pivot_cand = ((jj % num_neighs_bitmap) * 32) + jj / num_neighs_bitmap;
+                        if (pivot_cand >= num_neighs)
+                        {
+                            break;
+                        }
+                        unsigned int temp = shr_str1.current_lvl_bitmap[parity][pivot_cand / 32] & (1U << (pivot_cand % 32));
                         if (!temp)
                         {
                             continue;
@@ -280,46 +294,59 @@ __device__ void calculateIntersects(const int v_idx, const int *__restrict__ row
                         int overlap = 0;
                         for (int kk = tile.thread_rank(); kk < num_neighs_bitmap; kk += tile_sz)
                         {
-                            overlap += __popc(shr_str1.current_lvl_bitmap[parity][kk] & neigh_bitmap[block.group_index().x][jj][kk]);
+                            overlap += __popc(shr_str1.current_lvl_bitmap[parity][kk] & neigh_bitmap[block.group_index().x][pivot_cand][kk]);
                         }
                         overlap = cg::reduce(tile, overlap, cg::plus<int>());
+                        assert(overlap >= 0);
                         if (overlap > pivot_overlap)
                         {
                             pivot_overlap = overlap;
-                            pivot = jj;
+                            pivot = pivot_cand;
                         }
                     }
-                    int temp_pivot_overlap = cg::reduce(tile, pivot_overlap, cg::greater<int>());
-                    if (pivot >= 0 && temp_pivot_overlap == pivot_overlap)
-                    { // if two pivots have the same overlap we choose one at random
-                        cg::invoke_one(tile, [&]
-                                       { tmp_atomic.store(pivot, cuda::memory_order_relaxed); });
+                    int temp_pivot_overlap = BlockReduceT(shr_str3.reduce).Reduce(pivot_overlap, cub::Max()); // todo undefined val for threads other than thread 0
+                    if (block.thread_rank() == 0)
+                    {
+                        tmp_shr_int = temp_pivot_overlap;
                     }
                     block.sync();
-                    pivot = cg::invoke_one_broadcast(tile, [&]()
-                                                     { return tmp_atomic.load(cuda::memory_order_relaxed); }); // todo try to get it to work with block, I don't think it's possible
+                    temp_pivot_overlap = tmp_shr_int;
+                    if (temp_pivot_overlap == pivot_overlap)
+                    { // if two tiles' pivots have the same overlap we choose one at random
+                        tmp_atomic.store(pivot, cuda::memory_order_relaxed);
+                        // cg::invoke_one(tile, [&]
+                        //              { tmp_atomic.store(pivot, cuda::memory_order_relaxed); });
+                    }
+                    block.sync();
+                    cg::invoke_one(block, [&]
+                                   { tmp_shr_int = tmp_atomic.load(cuda::memory_order_relaxed); }); // todo try to get it to work with block, I don't think it's possible
+                    block.sync();
+                    pivot = tmp_shr_int;
                     pivot_overlap = temp_pivot_overlap;
 
                     for (int jj = block.thread_rank(); jj < num_neighs_bitmap; jj += g_const::threads_per_block)
                     {
                         shr_str2.current_lvl_pruned_bitmap[jj] = shr_str1.current_lvl_bitmap[parity][jj] & ~neigh_bitmap[block.group_index().x][pivot][jj];
                     }
-                    current_num_neighs = pivot_overlap;
+                    block.sync(); // this is required
+                    current_num_neighs -= pivot_overlap;
                     current_pivot = pivot;
                 }
                 if (current_num_neighs == 0)
                 {
                     break;
                 }
+                assert(current_pivot >= 0);
                 unsigned int temp = shr_str2.current_lvl_pruned_bitmap[current_idx / 32] & (1U << (current_idx % 32));
                 if (temp)
                 {
                     current_num_neighs--;
                     int new_num_pivots = current_idx == current_pivot ? current_num_pivots + 1 : current_num_pivots;
                     // +4 because thats the clique size the next level repesents
-                    if (current_level + 4 - clique_size <= new_num_pivots)
+                    if (current_level + 3 - clique_size <= new_num_pivots)
                     {
                         int next_num_neighs = 0;
+
                         for (int jj = block.thread_rank(); jj < num_neighs_bitmap; jj += g_const::threads_per_block)
                         { // current_lvl_bitmap[1] not zero to compute temprarily the I' in line 8 of figure 3 in paper
                             shr_str1.current_lvl_bitmap[!parity][jj] = shr_str1.current_lvl_bitmap[parity][jj] & neigh_bitmap[block.group_index().x][current_idx][jj];
@@ -330,7 +357,14 @@ __device__ void calculateIntersects(const int v_idx, const int *__restrict__ row
                             shr_str1.current_lvl_bitmap[!parity][jj] &= ~temp;
                             next_num_neighs += __popc(shr_str1.current_lvl_bitmap[!parity][jj]);
                         }
-                        next_num_neighs = cg::reduce(block, next_num_neighs, cg::plus<int>());
+                        next_num_neighs = BlockReduceT(shr_str3.reduce).Sum(next_num_neighs); // todo undefined value for threads other than 0
+                        if (block.thread_rank() == 0)
+                        {
+                            tmp_shr_int = next_num_neighs;
+                        }
+                        block.sync();
+                        next_num_neighs = tmp_shr_int;
+
                         if (next_num_neighs)
                         {
                             if (current_level > 0) // saves one transfer into global
@@ -353,16 +387,17 @@ __device__ void calculateIntersects(const int v_idx, const int *__restrict__ row
                                            { lvl_num_pivots[block.group_index().x][current_level] = current_num_pivots; });
                             cg::invoke_one(block, [&]
                                            { lvl_pivot[block.group_index().x][current_level] = current_pivot; });
-                            // current_num_neighs = next_num_neighs; this is a different num_neighs, unpruned
-                            current_idx = 0;
+
+                            current_idx = -1;
                             current_num_pivots = new_num_pivots;
+                            current_num_neighs = next_num_neighs;
                             current_level++;
                         }
-                        else // level + 1 is always countign at least 4 clqiues
+                        else if (current_level >= 1) // level + 1 is always countign at least 4 clqiues
                         {
                             // reusing neigh_ids_rev to store partial results
                             // https://math.stackexchange.com/questions/70125/calculating-n-choose-k-mod-one-million
-                            int n = new_num_pivots;
+                            const int n = new_num_pivots;
                             const int per_thread = (g_const::max_deg + g_const::threads_per_block - 1) / g_const::threads_per_block; // todo check this is right
                             int temp_twos[per_thread];
                             int temp_fives[per_thread];
@@ -374,10 +409,11 @@ __device__ void calculateIntersects(const int v_idx, const int *__restrict__ row
                                 temp_twos[k % per_thread] = 0;
                                 temp_fives[k % per_thread] = 0;
                                 temp_res[k % per_thread] = k == 0;
-
-                                if (k > 0 && k <= current_level + 4 - 4)
+                                // k > 0 && k <= current_level + 3 - 4 todo change back
+                                if (k > 0 && k <= min(current_level + 3 - 4, n))
                                 {
                                     int numer = n - k + 1; // todo was it +2
+                                    assert(numer >= 0);
                                     int denom = k;
                                     int num_fives = 0;
                                     int num_twos = 0;
@@ -425,14 +461,21 @@ __device__ void calculateIntersects(const int v_idx, const int *__restrict__ row
                                 }
                             }
 
-                            block.sync(); // todo check if neccesary
+                            // block.sync(); // todo check if neccesary
                             BlockScanT32(shr_str3.scan32).InclusiveSum(temp_twos, temp_twos);
                             block.sync();
                             BlockScanT32(shr_str3.scan32).InclusiveSum(temp_fives, temp_fives);
-                            block.sync(); // todo check if neccesary
-                            for (int ii = block.thread_rank(); ii <= g_const::max_deg; ii += g_const::threads_per_block)
+                            block.sync();
+                            BlockScanT64(shr_str3.scan64).InclusiveScan(temp_res, temp_res, mod_mul<long long>());
+                            block.sync();
+                            for (int ii = block.thread_rank(); ii < g_const::max_deg; ii += g_const::threads_per_block)
                             {
                                 int k = (per_thread * block.thread_rank() + (ii / g_const::threads_per_block));
+                                int current_clique_size = current_level + 3 - k;
+                                if (current_clique_size < 0)
+                                {
+                                    break;
+                                }
                                 for (int jj = 0; jj < temp_twos[k % per_thread]; jj++)
                                 {
                                     temp_res[k % per_thread] = (temp_res[k % per_thread] * 2ULL) % g_const::mod;
@@ -442,19 +485,22 @@ __device__ void calculateIntersects(const int v_idx, const int *__restrict__ row
                                     temp_res[k % per_thread] = (temp_res[k % per_thread] * 5ULL) % g_const::mod;
                                 }
                             }
-                            block.sync();
-                            BlockScanT64(shr_str3.scan64).InclusiveScan(temp_res, temp_res, mod_mul<long long>());
-                            block.sync(); // todo chekc if neccesary
 
-                            for (int ii = block.thread_rank(); ii <= g_const::max_deg; ii += g_const::threads_per_block)
+                            for (int ii = block.thread_rank(); ii < g_const::max_deg; ii += g_const::threads_per_block)
                             {
-                                int k = (per_thread * block.thread_rank() + (ii / g_const::threads_per_block));
-                                int current_clique_size = current_level + 4 - k;
-                                if (current_clique_size >= 4 && current_clique_size <= clique_size)
+                                int k;
+                                k = (per_thread * block.thread_rank() + (ii / g_const::threads_per_block));
+                                int current_clique_size = current_level + 3 - k;
+                                if (current_clique_size < 0)
+                                {
+                                    break;
+                                }
+                                if (current_clique_size >= 4 && current_clique_size <= clique_size && k <= n)
                                 {
                                     num_cliques_total[current_clique_size - 3] = (num_cliques_total[current_clique_size - 3] + (int)temp_res[k % per_thread]) % g_const::mod;
                                 }
                             }
+                            block.sync();
                         }
                     }
                 }
@@ -496,7 +542,7 @@ __device__ void calculateIntersects(const int v_idx, const int *__restrict__ row
 
         block.sync();
 
-        for (int ii = block.thread_rank(); ii < clique_size - 3; ii += block.size())
+        for (int ii = block.thread_rank(); ii < clique_size - 2; ii += g_const::threads_per_block)
         {
             int val = num_cliques_total[ii];
             int expected = 0;
@@ -509,9 +555,10 @@ __device__ void calculateIntersects(const int v_idx, const int *__restrict__ row
                 old = atomicCAS(&res[ii + 2], expected, desired);
             }
         }
+        block.sync();
     }
-    block_idx = (block_idx + num_neighs_bitmap_lvl1) % g_const::blocks_per_grid; // so spare blocks can start calculating next vertex
-    // todo chekc this doesnt brake stuff
+    block_idx = (block_idx + num_neighs_bitmap_lvl1) % g_const::blocks_per_grid; // so spare blocks can start calculating next vertex //todo uncomment
+    //  todo chekc this doesnt brake stuff
 }
 
 __global__ void countCliquesKern(const int *__restrict__ row_ptrs, const int *__restrict__ v1s, const int *__restrict__ v2s, int *__restrict__ res, const int clique_size)
@@ -526,7 +573,10 @@ __global__ void countCliquesKern(const int *__restrict__ row_ptrs, const int *__
 
 void countCliques(Graph &g, int clique_size, std::string output_path)
 {
-    thrust::device_vector<int> res_dev(clique_size, 0);
+    thrust::host_vector<int> res_host(clique_size, 0);
+    res_host[0] = g_const::num_vertices_host;
+    res_host[1] = g_const::num_edges_host;
+    thrust::device_vector<int> res_dev(res_host);
     countCliquesKern<<<g_const::blocks_per_grid, g_const::threads_per_block>>>(
         thrust::raw_pointer_cast(g.row_ptr.data()),
         thrust::raw_pointer_cast(g.v1s.data()),
@@ -534,9 +584,10 @@ void countCliques(Graph &g, int clique_size, std::string output_path)
         thrust::raw_pointer_cast(res_dev.data()),
         clique_size);
     PRINTER(res_dev);
-    thrust::host_vector<int> res_host(res_dev);
+    res_host = res_dev;
     std::ofstream outfile;
     outfile.open(output_path);
+    // thrust::copy(res_dev.begin(), res_dev.end(), std::ostream_iterator<int>(outfile, " "));
     for (int ii = 0; ii < res_host.size(); ii++)
     {
         if (ii)

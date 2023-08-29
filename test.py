@@ -9,7 +9,7 @@ res_path = "output.txt"
 start = timer()
 start_sub = start
 for i, f in enumerate(files):
-    print(f'starting file {i}')
+    print(f'starting file {i}, {f}')
     subprocess.run(["./k-clique", f, "11", res_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     end = timer()
     ans_path = "in/output/" + f[9:]
