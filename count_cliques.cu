@@ -13,7 +13,7 @@
 namespace cg = cooperative_groups;
 namespace stdc = cuda::std;
 
-const int tile_size = 4;
+const int tile_size = 8; // todo change to <= 8
 
 __device__ unsigned int neigh_bitmap_lvl1[g_const::blocks_per_grid][g_const::max_deg][(g_const::max_deg + 31) / 32];
 __device__ unsigned int neigh_bitmap[g_const::blocks_per_grid][g_const::max_deg][(g_const::max_deg + 31) / 32];
@@ -58,7 +58,7 @@ inline __device__ int numFactors(int n, int p)
 
 const int tile_sz = tile_size;
 // todo change to template, if I forgot it's because I had to change for intellisensen to work during dev, sorry
-__device__ void calculateIntersects(const int v_idx, const int *__restrict__ row_ptrs, const int *__restrict__ v1s, const int *__restrict__ v2s, const int clique_size, int *__restrict__ res, int &block_idx)
+__device__ void calculateIntersectsPivot(const int v_idx, const int *__restrict__ row_ptrs, const int *__restrict__ v1s, const int *__restrict__ v2s, const int clique_size, int *__restrict__ res, int &block_idx)
 {
     static_assert(g_const::max_deg == 1024); // this assumption is made for optimisations here
     auto block = cg::this_thread_block();
@@ -73,7 +73,7 @@ __device__ void calculateIntersects(const int v_idx, const int *__restrict__ row
         neigh_ids_lvl1[ii] = v2s[ii + start];
     }
     block.sync();
-    auto tile = cg::tiled_partition<tile_sz>(cg::this_thread_block());
+    auto tile = cg::tiled_partition<tile_sz>(block);
     assert(tile.size() == tile_sz);
     const int tile_idx = block.thread_rank() / tile_sz;
     const int num_tiles = g_const::threads_per_block / tile_sz;
@@ -253,11 +253,12 @@ __device__ void calculateIntersects(const int v_idx, const int *__restrict__ row
         int current_idx;
         int current_num_neighs = num_neighs;
         int current_num_pivots;
-        int current_pivot;
+        int current_pivot = 0;
         int parity = 0;
         // *************  first level ***********************
         cg::invoke_one(block, [&]
                        { lvl_idx[block.group_index().x][0] = 0; });
+        block.sync(); // todo remove
         current_level = 0;
         current_num_pivots = 0;
         current_idx = 0;
@@ -273,37 +274,40 @@ __device__ void calculateIntersects(const int v_idx, const int *__restrict__ row
             {
                 if (current_idx == 0)
                 {
+                    block.sync(); // todo remove
                     assert(current_num_neighs > 0);
                     int pivot = -1;
                     int pivot_overlap = -1; // edge case of overlap of 0 avoided
                     // todo remove
                     cg::invoke_one(block, [&]
                                    { tmp_atomic.store(-1, cuda::memory_order_relaxed); }); // todo remove
+                    block.sync();                                                          // todo remove
                     for (int jj = tile_idx; jj < (num_neighs_bitmap * 32); jj += num_tiles)
                     {
-                        int pivot_cand = ((jj % num_neighs_bitmap) * 32) + jj / num_neighs_bitmap;
-                        if (pivot_cand >= num_neighs)
+                        // int pivot_cand = ((jj % num_neighs_bitmap) * 32) + jj / num_neighs_bitmap;
+                        int pivot_cand = jj;
+                        if (!(pivot_cand >= num_neighs))
                         {
-                            break;
+                            unsigned int temp = shr_str1.current_lvl_bitmap[parity][pivot_cand / 32] & (1U << (pivot_cand % 32));
+                            if (temp)
+                            {
+                                int overlap = 0;
+                                for (int kk = tile.thread_rank(); kk < num_neighs_bitmap; kk += tile_sz)
+                                {
+                                    overlap += __popc(shr_str1.current_lvl_bitmap[parity][kk] & neigh_bitmap[block.group_index().x][pivot_cand][kk]);
+                                }
+                                overlap = cg::reduce(tile, overlap, cg::plus<int>());
+                                assert(overlap >= 0);
+                                if (overlap > pivot_overlap)
+                                {
+                                    pivot_overlap = overlap;
+                                    pivot = pivot_cand;
+                                }
+                            }
                         }
-                        unsigned int temp = shr_str1.current_lvl_bitmap[parity][pivot_cand / 32] & (1U << (pivot_cand % 32));
-                        if (!temp)
-                        {
-                            continue;
-                        }
-                        int overlap = 0;
-                        for (int kk = tile.thread_rank(); kk < num_neighs_bitmap; kk += tile_sz)
-                        {
-                            overlap += __popc(shr_str1.current_lvl_bitmap[parity][kk] & neigh_bitmap[block.group_index().x][pivot_cand][kk]);
-                        }
-                        overlap = cg::reduce(tile, overlap, cg::plus<int>());
-                        assert(overlap >= 0);
-                        if (overlap > pivot_overlap)
-                        {
-                            pivot_overlap = overlap;
-                            pivot = pivot_cand;
-                        }
+                        block.sync(); // todo remove
                     }
+                    block.sync();
                     int temp_pivot_overlap = BlockReduceT(shr_str3.reduce).Reduce(pivot_overlap, cub::Max()); // todo undefined val for threads other than thread 0
                     if (block.thread_rank() == 0)
                     {
@@ -331,7 +335,9 @@ __device__ void calculateIntersects(const int v_idx, const int *__restrict__ row
                     block.sync(); // this is required
                     current_num_neighs -= pivot_overlap;
                     current_pivot = pivot;
+                    block.sync(); // new
                 }
+                block.sync(); // todo remove
                 if (current_num_neighs == 0)
                 {
                     break;
@@ -342,7 +348,6 @@ __device__ void calculateIntersects(const int v_idx, const int *__restrict__ row
                 {
                     current_num_neighs--;
                     int new_num_pivots = current_idx == current_pivot ? current_num_pivots + 1 : current_num_pivots;
-                    // +4 because thats the clique size the next level repesents
                     if (current_level + 3 - clique_size <= new_num_pivots)
                     {
                         int next_num_neighs = 0;
@@ -357,6 +362,7 @@ __device__ void calculateIntersects(const int v_idx, const int *__restrict__ row
                             shr_str1.current_lvl_bitmap[!parity][jj] &= ~temp;
                             next_num_neighs += __popc(shr_str1.current_lvl_bitmap[!parity][jj]);
                         }
+                        block.sync();                                                         // new
                         next_num_neighs = BlockReduceT(shr_str3.reduce).Sum(next_num_neighs); // todo undefined value for threads other than 0
                         if (block.thread_rank() == 0)
                         {
@@ -364,7 +370,6 @@ __device__ void calculateIntersects(const int v_idx, const int *__restrict__ row
                         }
                         block.sync();
                         next_num_neighs = tmp_shr_int;
-
                         if (next_num_neighs)
                         {
                             if (current_level > 0) // saves one transfer into global
@@ -392,6 +397,7 @@ __device__ void calculateIntersects(const int v_idx, const int *__restrict__ row
                             current_num_pivots = new_num_pivots;
                             current_num_neighs = next_num_neighs;
                             current_level++;
+                            block.sync();
                         }
                         else if (current_level >= 1) // level + 1 is always countign at least 4 clqiues
                         {
@@ -404,7 +410,7 @@ __device__ void calculateIntersects(const int v_idx, const int *__restrict__ row
                             long long temp_res[per_thread];
                             for (int ii = block.thread_rank(); ii < g_const::max_deg; ii += g_const::threads_per_block)
                             {
-                                int k = (per_thread * block.thread_rank() + (ii / g_const::threads_per_block));
+                                int k = (per_thread * block.thread_rank() + (ii / g_const::threads_per_block)); // todo change back
                                 // n_C_k[k] = k == 0; // n choose 0 is 1
                                 temp_twos[k % per_thread] = 0;
                                 temp_fives[k % per_thread] = 0;
@@ -461,7 +467,7 @@ __device__ void calculateIntersects(const int v_idx, const int *__restrict__ row
                                 }
                             }
 
-                            // block.sync(); // todo check if neccesary
+                            block.sync(); // todo check if neccesary
                             BlockScanT32(shr_str3.scan32).InclusiveSum(temp_twos, temp_twos);
                             block.sync();
                             BlockScanT32(shr_str3.scan32).InclusiveSum(temp_fives, temp_fives);
@@ -485,7 +491,6 @@ __device__ void calculateIntersects(const int v_idx, const int *__restrict__ row
                                     temp_res[k % per_thread] = (temp_res[k % per_thread] * 5ULL) % g_const::mod;
                                 }
                             }
-
                             for (int ii = block.thread_rank(); ii < g_const::max_deg; ii += g_const::threads_per_block)
                             {
                                 int k;
@@ -561,12 +566,12 @@ __device__ void calculateIntersects(const int v_idx, const int *__restrict__ row
     //  todo chekc this doesnt brake stuff
 }
 
-__global__ void countCliquesKern(const int *__restrict__ row_ptrs, const int *__restrict__ v1s, const int *__restrict__ v2s, int *__restrict__ res, const int clique_size)
+__global__ void countCliquesKernPivot(const int *__restrict__ row_ptrs, const int *__restrict__ v1s, const int *__restrict__ v2s, int *__restrict__ res, const int clique_size)
 {
     int block_idx = blockIdx.x;
     for (int ii = 0; ii < g_const::num_vertices_dev; ii++)
     {
-        calculateIntersects(ii, row_ptrs, v1s, v2s, clique_size, res, block_idx);
+        calculateIntersectsPivot(ii, row_ptrs, v1s, v2s, clique_size, res, block_idx);
         __syncthreads();
     }
 }
@@ -577,12 +582,14 @@ void countCliques(Graph &g, int clique_size, std::string output_path)
     res_host[0] = g_const::num_vertices_host;
     res_host[1] = g_const::num_edges_host;
     thrust::device_vector<int> res_dev(res_host);
-    countCliquesKern<<<g_const::blocks_per_grid, g_const::threads_per_block>>>(
+
+    countCliquesKernPivot<<<g_const::blocks_per_grid, g_const::threads_per_block>>>(
         thrust::raw_pointer_cast(g.row_ptr.data()),
         thrust::raw_pointer_cast(g.v1s.data()),
         thrust::raw_pointer_cast(g.v2s.data()),
         thrust::raw_pointer_cast(res_dev.data()),
         clique_size);
+
     PRINTER(res_dev);
     res_host = res_dev;
     std::ofstream outfile;
