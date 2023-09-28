@@ -48,3 +48,47 @@ didnt use grid synchronisation as it seemed slower
 
 
 ![Alt text](image.png)
+
+
+const int tile_size = 4; // todo change to <= 8
+
+const int threads_per_block = 128; // todo orginally 128
+const int blocks_per_grid = 32;    // todo originally 32
+
+direct done
+res_dev:        1696415 11095298        28769868        148834439       183885507       759000981       142566591       576204696       731674867
+
+real    16m27.866s
+user    16m26.581s
+sys     0m0.381s
+
+const int tile_size = 4; // todo change to <= 8
+
+const int threads_per_block = 256; // todo orginally 128
+const int blocks_per_grid = 16;    // todo originally 32
+
+direct done
+res_dev:        1696415 11095298        28769868        148834439       183885507       759000981       142566591       576204696       731674867
+
+real    19m3.618s
+user    19m2.144s
+sys     0m0.526s
+
+
+const int tile_size = 8; // todo change to <= 8
+
+const int threads_per_block = 128; // todo orginally 128
+const int blocks_per_grid = 32;    // todo originally 32
+
+direct done
+res_dev:        1696415 11095298        28769868        148834439       183885507       759000981       142566591       576204696       731674867
+
+real    16m34.401s
+user    16m33.067s
+sys     0m0.455s
+
+
+const int tile_size = 2; // todo change to <= 8
+
+const int threads_per_block = 128; // todo orginally 128
+const int blocks_per_grid = 32;    // todo originally 32

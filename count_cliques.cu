@@ -13,7 +13,7 @@
 namespace cg = cooperative_groups;
 namespace stdc = cuda::std;
 
-const int tile_size = 4; // todo change to <= 8
+const int tile_size_pivot = 4; // todo change to <= 8
 
 __device__ unsigned int neigh_bitmap_lvl1[g_const::blocks_per_grid][g_const::max_deg][(g_const::max_deg + 31) / 32];
 __device__ unsigned int neigh_bitmap[g_const::blocks_per_grid][g_const::max_deg][(g_const::max_deg + 31) / 32];
@@ -56,8 +56,7 @@ inline __device__ int numFactors(int n, int p)
     return s_n;
 }
 
-
-const int tile_sz = tile_size;
+const int tile_sz = tile_size_pivot;
 // todo change to template, if I forgot it's because I had to change for intellisensen to work during dev, sorry
 __device__ void calculateIntersectsPivot(const int v_idx, const int *__restrict__ row_ptrs, const int *__restrict__ v1s, const int *__restrict__ v2s, const int clique_size, int *__restrict__ res, int &block_idx)
 {

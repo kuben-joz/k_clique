@@ -129,30 +129,6 @@ k-clique/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/k-clique.dir/build.make CMakeFiles/k-clique.dir/build
 .PHONY : k-clique/fast
 
-count_cliques.o: count_cliques.cu.o
-.PHONY : count_cliques.o
-
-# target to build an object file
-count_cliques.cu.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/k-clique.dir/build.make CMakeFiles/k-clique.dir/count_cliques.cu.o
-.PHONY : count_cliques.cu.o
-
-count_cliques.i: count_cliques.cu.i
-.PHONY : count_cliques.i
-
-# target to preprocess a source file
-count_cliques.cu.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/k-clique.dir/build.make CMakeFiles/k-clique.dir/count_cliques.cu.i
-.PHONY : count_cliques.cu.i
-
-count_cliques.s: count_cliques.cu.s
-.PHONY : count_cliques.s
-
-# target to generate assembly for a file
-count_cliques.cu.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/k-clique.dir/build.make CMakeFiles/k-clique.dir/count_cliques.cu.s
-.PHONY : count_cliques.cu.s
-
 direct.o: direct.cu.o
 .PHONY : direct.o
 
@@ -225,6 +201,54 @@ main.cu.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/k-clique.dir/build.make CMakeFiles/k-clique.dir/main.cu.s
 .PHONY : main.cu.s
 
+orient.o: orient.cu.o
+.PHONY : orient.o
+
+# target to build an object file
+orient.cu.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/k-clique.dir/build.make CMakeFiles/k-clique.dir/orient.cu.o
+.PHONY : orient.cu.o
+
+orient.i: orient.cu.i
+.PHONY : orient.i
+
+# target to preprocess a source file
+orient.cu.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/k-clique.dir/build.make CMakeFiles/k-clique.dir/orient.cu.i
+.PHONY : orient.cu.i
+
+orient.s: orient.cu.s
+.PHONY : orient.s
+
+# target to generate assembly for a file
+orient.cu.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/k-clique.dir/build.make CMakeFiles/k-clique.dir/orient.cu.s
+.PHONY : orient.cu.s
+
+pivot.o: pivot.cu.o
+.PHONY : pivot.o
+
+# target to build an object file
+pivot.cu.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/k-clique.dir/build.make CMakeFiles/k-clique.dir/pivot.cu.o
+.PHONY : pivot.cu.o
+
+pivot.i: pivot.cu.i
+.PHONY : pivot.i
+
+# target to preprocess a source file
+pivot.cu.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/k-clique.dir/build.make CMakeFiles/k-clique.dir/pivot.cu.i
+.PHONY : pivot.cu.i
+
+pivot.s: pivot.cu.s
+.PHONY : pivot.s
+
+# target to generate assembly for a file
+pivot.cu.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/k-clique.dir/build.make CMakeFiles/k-clique.dir/pivot.cu.s
+.PHONY : pivot.cu.s
+
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -234,9 +258,6 @@ help:
 	@echo "... edit_cache"
 	@echo "... rebuild_cache"
 	@echo "... k-clique"
-	@echo "... count_cliques.o"
-	@echo "... count_cliques.i"
-	@echo "... count_cliques.s"
 	@echo "... direct.o"
 	@echo "... direct.i"
 	@echo "... direct.s"
@@ -246,6 +267,12 @@ help:
 	@echo "... main.o"
 	@echo "... main.i"
 	@echo "... main.s"
+	@echo "... orient.o"
+	@echo "... orient.i"
+	@echo "... orient.s"
+	@echo "... pivot.o"
+	@echo "... pivot.i"
+	@echo "... pivot.s"
 .PHONY : help
 
 
