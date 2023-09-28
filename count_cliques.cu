@@ -13,7 +13,7 @@
 namespace cg = cooperative_groups;
 namespace stdc = cuda::std;
 
-const int tile_size = 8; // todo change to <= 8
+const int tile_size = 4; // todo change to <= 8
 
 __device__ unsigned int neigh_bitmap_lvl1[g_const::blocks_per_grid][g_const::max_deg][(g_const::max_deg + 31) / 32];
 __device__ unsigned int neigh_bitmap[g_const::blocks_per_grid][g_const::max_deg][(g_const::max_deg + 31) / 32];
@@ -55,6 +55,7 @@ inline __device__ int numFactors(int n, int p)
 
     return s_n;
 }
+
 
 const int tile_sz = tile_size;
 // todo change to template, if I forgot it's because I had to change for intellisensen to work during dev, sorry
@@ -258,7 +259,7 @@ __device__ void calculateIntersectsPivot(const int v_idx, const int *__restrict_
         // *************  first level ***********************
         cg::invoke_one(block, [&]
                        { lvl_idx[block.group_index().x][0] = 0; });
-        block.sync(); // todo remove
+        // block.sync(); // todo remove
         current_level = 0;
         current_num_pivots = 0;
         current_idx = 0;
@@ -274,18 +275,13 @@ __device__ void calculateIntersectsPivot(const int v_idx, const int *__restrict_
             {
                 if (current_idx == 0)
                 {
-                    block.sync(); // todo remove
+                    // block.sync(); // todo remove
                     assert(current_num_neighs > 0);
                     int pivot = -1;
                     int pivot_overlap = -1; // edge case of overlap of 0 avoided
-                    // todo remove
-                    cg::invoke_one(block, [&]
-                                   { tmp_atomic.store(-1, cuda::memory_order_relaxed); }); // todo remove
-                    block.sync();                                                          // todo remove
                     for (int jj = tile_idx; jj < (num_neighs_bitmap * 32); jj += num_tiles)
                     {
-                        // int pivot_cand = ((jj % num_neighs_bitmap) * 32) + jj / num_neighs_bitmap;
-                        int pivot_cand = jj;
+                        int pivot_cand = ((jj % num_neighs_bitmap) * 32) + jj / num_neighs_bitmap;
                         if (!(pivot_cand >= num_neighs))
                         {
                             unsigned int temp = shr_str1.current_lvl_bitmap[parity][pivot_cand / 32] & (1U << (pivot_cand % 32));
@@ -305,11 +301,9 @@ __device__ void calculateIntersectsPivot(const int v_idx, const int *__restrict_
                                 }
                             }
                         }
-                        block.sync(); // todo remove
                     }
-                    block.sync();
                     int temp_pivot_overlap = BlockReduceT(shr_str3.reduce).Reduce(pivot_overlap, cub::Max()); // todo undefined val for threads other than thread 0
-                    if (block.thread_rank() == 0)
+                    if (block.thread_rank() == 0)                                                             // this must be thread 0 as that is where the reduce is stored
                     {
                         tmp_shr_int = temp_pivot_overlap;
                     }
@@ -317,9 +311,9 @@ __device__ void calculateIntersectsPivot(const int v_idx, const int *__restrict_
                     temp_pivot_overlap = tmp_shr_int;
                     if (temp_pivot_overlap == pivot_overlap)
                     { // if two tiles' pivots have the same overlap we choose one at random
-                        tmp_atomic.store(pivot, cuda::memory_order_relaxed);
-                        // cg::invoke_one(tile, [&]
-                        //              { tmp_atomic.store(pivot, cuda::memory_order_relaxed); });
+                        // tmp_atomic.store(pivot, cuda::memory_order_relaxed);
+                        cg::invoke_one(tile, [&]
+                                       { tmp_atomic.store(pivot, cuda::memory_order_relaxed); });
                     }
                     block.sync();
                     cg::invoke_one(block, [&]
@@ -335,9 +329,8 @@ __device__ void calculateIntersectsPivot(const int v_idx, const int *__restrict_
                     block.sync(); // this is required
                     current_num_neighs -= pivot_overlap;
                     current_pivot = pivot;
-                    block.sync(); // new
                 }
-                block.sync(); // todo remove
+                block.sync(); // this is required
                 if (current_num_neighs == 0)
                 {
                     break;
@@ -467,13 +460,13 @@ __device__ void calculateIntersectsPivot(const int v_idx, const int *__restrict_
                                 }
                             }
 
-                            block.sync(); // todo check if neccesary
+                            // block.sync(); // todo check if neccesary
                             BlockScanT32(shr_str3.scan32).InclusiveSum(temp_twos, temp_twos);
-                            block.sync();
+                            block.sync(); // sync because we are reusing same shared mem
                             BlockScanT32(shr_str3.scan32).InclusiveSum(temp_fives, temp_fives);
-                            block.sync();
+                            block.sync(); // sync because we are reusing same shared mem
                             BlockScanT64(shr_str3.scan64).InclusiveScan(temp_res, temp_res, mod_mul<long long>());
-                            block.sync();
+                            // block.sync(); // sync because we are reusing same shared mem //todo remove
                             for (int ii = block.thread_rank(); ii < g_const::max_deg; ii += g_const::threads_per_block)
                             {
                                 int k = (per_thread * block.thread_rank() + (ii / g_const::threads_per_block));
@@ -594,7 +587,6 @@ void countCliques(Graph &g, int clique_size, std::string output_path)
     res_host = res_dev;
     std::ofstream outfile;
     outfile.open(output_path);
-    // thrust::copy(res_dev.begin(), res_dev.end(), std::ostream_iterator<int>(outfile, " "));
     for (int ii = 0; ii < res_host.size(); ii++)
     {
         if (ii)
