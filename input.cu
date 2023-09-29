@@ -14,14 +14,6 @@
 
 using namespace std;
 
-namespace g_const
-{
-    __constant__ int num_edges_dev = 0;
-    __constant__ int num_vertices_dev = 0;
-    int num_edges_host = 0;
-    int num_vertices_host = 0;
-}
-
 Graph getGraph(char *filename)
 {
     ifstream in_file(filename);

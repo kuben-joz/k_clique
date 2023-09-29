@@ -92,3 +92,72 @@ const int tile_size = 2; // todo change to <= 8
 
 const int threads_per_block = 128; // todo orginally 128
 const int blocks_per_grid = 32;    // todo originally 32
+
+direct done
+res_dev:        1696415 11095298        28769868        148834439       183885507       759000981       142566591       576204696       731674867
+
+real    17m36.788s
+user    17m35.005s
+sys     0m0.569s
+
+
+const int tile_size = 4; // todo change to <= 8
+
+const int threads_per_block = 128; // todo orginally 128
+const int blocks_per_grid = 64;    // todo originally 32
+
+direct done
+res_dev:        1696415 11095298        28769868        148834439       183885507       759000981       142566591       576204696       731674867
+
+real    17m2.503s
+user    17m0.907s
+sys     0m0.444s
+
+const int tile_size = 4; // todo change to <= 8
+
+const int threads_per_block = 128; // todo orginally 128
+const int blocks_per_grid = 16;    // todo originally 32
+
+
+direct done
+3
+res_dev:        1696415 11095298        28769868        148834439       183885507       759000981       142566591       576204696       731674867
+
+real    19m58.984s
+user    19m57.543s
+sys     0m0.467s
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+real    16m35.125s
+user    16m34.531s
+sys     0m0.316s
+
+
+32
+real    15m55.812s
+user    15m55.271s
+sys     0m0.275s
+
+64
+real    15m38.867s
+user    15m38.215s
+sys     0m0.326s
+
+128
+real    16m0.706s
+user    15m59.979s
+sys     0m0.323s

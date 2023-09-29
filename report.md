@@ -16,7 +16,7 @@ And the libraries:
 
 ### Algorithms
 The implementation uses:
-- Vertex centric graph orientation for queries of < 7
+- Vertex centric graph orientation for queries of $k < 8$, for $7$ this is about 2x faster with skitter as input
 - Edge centric pivoting for larger size clique searches
 
 Both make use of the degree edge orientation criteria.
@@ -31,4 +31,8 @@ Both implementations use bitmaps as decribed in the publication.. Wherether poss
 
 I tried to maximise usage of `__shared__` memory by using unions of shared storage for different things. One optimisation I didn't do was remember the current level bitmap for n levels instead of just 2 to reduce the number of transfers into the artifical recursion stack, which has to be in global memory. This applies only to the pivot kernel.
 
+### Parameter Selection
+Seems like 128 threads per block are optimal
+
+Blocks per grid are `cudaOccupancyMaxActiveBlocksPerMultiprocessor*deviceProp.multiProcessorCount*2` this seems close to optimal for the GPUs I tried, but I didn't have access to entropy in the end. The makefile generates code for all GPUs that this will likely be run on.
 

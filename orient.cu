@@ -14,7 +14,7 @@ namespace cg = cooperative_groups;
 const int tile_size_orient = 8;
 
 __device__ unsigned int neigh_bitmasks[g_const::blocks_per_grid][g_const::max_deg][(g_const::max_deg + 31) / 32];
-__device__ unsigned int lvl_bitmap_orient[g_const::blocks_per_grid][g_const::threads_per_block / tile_size_orient][g_const::max_clique_size - 4][(g_const::max_deg + 31) / 32]; // todo this might be +1, will be buggy regardless if I set max_clqiue_size ot 3 during testing
+__device__ unsigned int lvl_bitmap_orient[g_const::blocks_per_grid][g_const::threads_per_block / tile_size_orient][g_const::max_clique_size - 4][(g_const::max_deg + 31) / 32];
 
 inline __device__ void modulo_add(cuda::atomic<int, cuda::thread_scope_block> &res, int val)
 {
@@ -37,7 +37,6 @@ __device__ void calculateIntersectsOrient(int v_idx, int *row_ptrs, int *v1s, in
     int start = row_ptrs[v_idx];
     int end = row_ptrs[v_idx + 1];
     const int num_neighs = end - start;
-    // todo write this just once from constants, as well as cliques of size 2
     if (num_neighs == 0 && block.thread_rank() == 0)
     {
         int val = 1;
@@ -221,7 +220,14 @@ __global__ void countCliquesKernOrient(int *row_ptrs, int *v1s, int *v2s, int *r
 void countCliquesOrient(Graph &g, int clique_size, std::string output_path)
 {
     thrust::device_vector<int> res_dev(clique_size, 0);
-    countCliquesKernOrient<<<g_const::blocks_per_grid, g_const::threads_per_block>>>(
+    int maxActiveBlocks;
+    cudaOccupancyMaxActiveBlocksPerMultiprocessor(&maxActiveBlocks,
+                                                  countCliquesKernOrient, g_const::threads_per_block,
+                                                  0);
+    cudaDeviceProp deviceProp;
+    cudaGetDeviceProperties(&deviceProp, 0); // 0-th device
+    g_const::num_edges_host = deviceProp.multiProcessorCount * maxActiveBlocks * 2;
+    countCliquesKernOrient<<<g_const::blocks_per_grid_host, g_const::threads_per_block>>>(
         thrust::raw_pointer_cast(g.row_ptr.data()),
         thrust::raw_pointer_cast(g.v1s.data()),
         thrust::raw_pointer_cast(g.v2s.data()),
