@@ -568,13 +568,13 @@ void countCliquesPivot(Graph &g, int clique_size, std::string output_path)
     thrust::device_vector<int> res_dev(res_host);
     int maxActiveBlocks;
     HANDLE_ERROR(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&maxActiveBlocks,
-                                                              countCliquesKernPivot, g_const::threads_per_block,
-                                                              0));
+                                                               countCliquesKernPivot, g_const::threads_per_block,
+                                                               0));
     cudaDeviceProp deviceProp;
     cudaGetDeviceProperties(&deviceProp, 0); // 0-th device
     g_const::blocks_per_grid_host = deviceProp.multiProcessorCount * maxActiveBlocks * 2;
     HANDLE_ERROR(cudaMemcpyToSymbol(g_const::blocks_per_grid_dev, &g_const::blocks_per_grid_host, sizeof g_const::blocks_per_grid_host));
-    countCliquesKernPivot<<<g_const::blocks_per_grid_host, g_const::threads_per_block>>>(
+    countCliquesKernPivot<<<g_const::blocks_per_grid, g_const::threads_per_block>>>(
         thrust::raw_pointer_cast(g.row_ptr.data()),
         thrust::raw_pointer_cast(g.v1s.data()),
         thrust::raw_pointer_cast(g.v2s.data()),

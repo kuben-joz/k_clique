@@ -1,5 +1,5 @@
 {
-    "image": "hpc-clique:latest",
+    "image": "hpc-11:latest",
     "runArgs": [
         // you have to pass what gpu you wan to CUDA interact with
         "--gpus=all",

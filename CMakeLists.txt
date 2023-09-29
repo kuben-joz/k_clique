@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20 FATAL_ERROR)
 find_package(CUDAToolkit)
 
-set(CMAKE_CUDA_ARCHITECTURES 60)
+set(CMAKE_CUDA_ARCHITECTURES "60;61;70;75;80;86")
 set(CMAKE_CUDA_COMPILER /usr/local/cuda/bin/nvcc)
 
 project(k-clique CUDA)
@@ -17,5 +17,7 @@ target_sources(k-clique PRIVATE constants.cuh orient.cu orient.cuh pivot.cu pivo
 
 #set_target_properties(k-clique PROPERTIES
 #    CUDA_SEPARABLE_COMPILATION ON CUDA_ARCHITECTURES "60;61;70;75;80;86")
+#set_target_properties(k-clique PROPERTIES
+#    CUDA_SEPARABLE_COMPILATION ON CUDA_ARCHITECTURES "60")
 set_target_properties(k-clique PROPERTIES
-    CUDA_SEPARABLE_COMPILATION ON CUDA_ARCHITECTURES "60")
+    CUDA_SEPARABLE_COMPILATION ON)
