@@ -112,8 +112,10 @@ __device__ void calculateIntersectsOrient(int v_idx, int *row_ptrs, int *v1s, in
             current_lvl_bitmap[tile_idx][jj] = neigh_bitmasks[blockIdx.x][ii][jj];
         }
 
-        cg::invoke_one(tile, [&]
-                       { modulo_add(num_cliques_total[1], 1); });
+        if (!tile.thread_rank())
+        {
+            modulo_add(num_cliques_total[1], 1);
+        }
         // ******************* implicit stack used from here on out *********************
         do
         {
@@ -131,61 +133,63 @@ __device__ void calculateIntersectsOrient(int v_idx, int *row_ptrs, int *v1s, in
                     lvl_num_neighs[current_level] = cg::reduce(tile, lvl_num_neighs[current_level], cg::plus<int>());
                     if (lvl_num_neighs[current_level] > 0)
                     {
-                        cg::invoke_one(tile, [&]
-                                       { modulo_add(num_cliques_total[current_level + 2], lvl_num_neighs[current_level]); });
+                        if (!tile.thread_rank())
+                        {
+                            modulo_add(num_cliques_total[current_level + 2], lvl_num_neighs[current_level]);
+                        }
+                        if (current_level == clique_size - 3)
+                        { // max depth reached
+                            break;
+                        }
                     }
-                    if (current_level == clique_size - 3)
-                    { // max depth reached
+                    if (lvl_num_neighs[current_level] == 0)
+                    {
                         break;
                     }
+                    unsigned int temp = current_lvl_bitmap[tile_idx][idx / 32] & (1U << (idx % 32));
+                    if (temp > 0)
+                    {
+                        lvl_num_neighs[current_level]--;
+                        if (current_level > 0) // saves one transfer into global
+                        {
+                            for (int jj = tile.thread_rank(); jj < num_neighs_bitmap; jj += tile_sz)
+                            {
+                                lvl_bitmap_orient[blockIdx.x][tile_idx][current_level - 1][jj] = current_lvl_bitmap[tile_idx][jj];
+                                current_lvl_bitmap[tile_idx][jj] = current_lvl_bitmap[tile_idx][jj] & neigh_bitmasks[blockIdx.x][idx][jj];
+                            }
+                        }
+                        else
+                        {
+                            for (int jj = tile.thread_rank(); jj < num_neighs_bitmap; jj += tile_sz)
+                            {
+                                current_lvl_bitmap[tile_idx][jj] = current_lvl_bitmap[tile_idx][jj] & neigh_bitmasks[blockIdx.x][idx][jj];
+                            }
+                        }
+                        temp = 0;
+                        idx = 0;
+                        current_level++;
+                    }
                 }
-                if (lvl_num_neighs[current_level] == 0)
+                do
                 {
-                    break;
-                }
-                unsigned int temp = current_lvl_bitmap[tile_idx][idx / 32] & (1U << (idx % 32));
-                if (temp > 0)
+                    current_level--;
+                } while (current_level >= 0 && lvl_num_neighs[current_level] == 0);
+                if (current_level >= 0) // putting this here saves clique_size transfers
                 {
-                    lvl_num_neighs[current_level]--;
-                    if (current_level > 0) // saves one transfer into global
+                    lvl_idx[current_level + 1] = 0;
+                    if (current_level > 0)
                     {
                         for (int jj = tile.thread_rank(); jj < num_neighs_bitmap; jj += tile_sz)
                         {
-                            lvl_bitmap_orient[blockIdx.x][tile_idx][current_level - 1][jj] = current_lvl_bitmap[tile_idx][jj];
-                            current_lvl_bitmap[tile_idx][jj] = current_lvl_bitmap[tile_idx][jj] & neigh_bitmasks[blockIdx.x][idx][jj];
+                            current_lvl_bitmap[tile_idx][jj] = lvl_bitmap_orient[blockIdx.x][tile_idx][current_level - 1][jj]; // -1 as we only store levels greater than 0
                         }
                     }
-                    else
-                    {
+                    else if (current_level == 0)
+                    { // doing it this way saves one transfer into global
                         for (int jj = tile.thread_rank(); jj < num_neighs_bitmap; jj += tile_sz)
                         {
-                            current_lvl_bitmap[tile_idx][jj] = current_lvl_bitmap[tile_idx][jj] & neigh_bitmasks[blockIdx.x][idx][jj];
+                            current_lvl_bitmap[tile_idx][jj] = neigh_bitmasks[blockIdx.x][ii][jj];
                         }
-                    }
-                    temp = 0;
-                    idx = 0;
-                    current_level++;
-                }
-            }
-            do
-            {
-                current_level--;
-            } while (current_level >= 0 && lvl_num_neighs[current_level] == 0);
-            if (current_level >= 0) // putting this here saves clique_size transfers
-            {
-                lvl_idx[current_level + 1] = 0;
-                if (current_level > 0)
-                {
-                    for (int jj = tile.thread_rank(); jj < num_neighs_bitmap; jj += tile_sz)
-                    {
-                        current_lvl_bitmap[tile_idx][jj] = lvl_bitmap_orient[blockIdx.x][tile_idx][current_level - 1][jj]; // -1 as we only store levels greater than 0
-                    }
-                }
-                else if (current_level == 0)
-                { // doing it this way saves one transfer into global
-                    for (int jj = tile.thread_rank(); jj < num_neighs_bitmap; jj += tile_sz)
-                    {
-                        current_lvl_bitmap[tile_idx][jj] = neigh_bitmasks[blockIdx.x][ii][jj];
                     }
                 }
             }
@@ -227,7 +231,7 @@ void countCliquesOrient(Graph &g, int clique_size, std::string output_path)
     cudaDeviceProp deviceProp;
     cudaGetDeviceProperties(&deviceProp, 0); // 0-th device
     g_const::num_edges_host = deviceProp.multiProcessorCount * maxActiveBlocks * 2;
-    countCliquesKernOrient<<<g_const::blocks_per_grid_host, g_const::threads_per_block>>>(
+    countCliquesKernOrient<<<g_const::blocks_per_grid, g_const::threads_per_block>>>(
         thrust::raw_pointer_cast(g.row_ptr.data()),
         thrust::raw_pointer_cast(g.v1s.data()),
         thrust::raw_pointer_cast(g.v2s.data()),

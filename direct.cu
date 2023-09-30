@@ -31,7 +31,7 @@ int directGraph(Graph &g)
     thrust::adjacent_difference(g.row_ptr.begin() + 1, g.row_ptr.end(), v_degrees.begin()); // todo maybe not in place would be faster, subtraction instead
     thrust::device_vector<int> pointer_offset_sparse(g_const::num_edges_host);
     // thrust::device_vector<int> pointer_offset_reduced(num_vertices_host + 1);
-    directKern<<<g_const::blocks_per_grid_host, g_const::threads_per_block>>>(
+    directKern<<<g_const::blocks_per_grid, g_const::threads_per_block>>>(
         thrust::raw_pointer_cast(v_degrees.data()),
         thrust::raw_pointer_cast(pointer_offset_sparse.data()),
         thrust::raw_pointer_cast(g.v1s.data()),

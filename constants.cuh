@@ -11,6 +11,4 @@ namespace g_const
     const int max_clique_size = 12;
     const int threads_per_block = 128; // todo orginally 128
     const int blocks_per_grid = 24;    // todo originally 32
-    extern __constant__ int blocks_per_grid_dev;
-    extern int blocks_per_grid_host;
 }

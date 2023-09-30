@@ -22,7 +22,7 @@ int main(int argc, char *argv[])
     std::string output_path = std::string(argv[3]);
     Graph g = getGraph(argv[1]);
     directGraph(g);
-    if (max_clique < 5)
+    if (max_clique < 8)
     {
         countCliquesOrient(g, max_clique, output_path);
     }

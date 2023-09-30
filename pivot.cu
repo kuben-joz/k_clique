@@ -108,7 +108,7 @@ __device__ void calculateIntersectsPivot(const int v_idx, const int *__restrict_
     }
     block.sync();
     // ###################################################################################################################
-    for (int bb = block_idx; bb < num_neighs_lvl1; bb += g_const::blocks_per_grid_dev)
+    for (int bb = block_idx; bb < num_neighs_lvl1; bb += g_const::blocks_per_grid)
     {
 
         __shared__ int neigh_ids[g_const::max_deg];
@@ -141,12 +141,15 @@ __device__ void calculateIntersectsPivot(const int v_idx, const int *__restrict_
         {
             shr_str2.root_neigh_bitmap[ii] = neigh_bitmap_lvl1[block.group_index().x][bb][ii];
         }
-        // todo what if only cliques sof size 3?
 
         __shared__ cuda::atomic<int, cuda::thread_scope_block> tmp_atomic; // reused later
         __shared__ int tmp_shr_int;
-        cg::invoke_one(block, [&]
-                       { tmp_atomic.store(0, cuda::memory_order_relaxed); });
+        if (block.thread_rank() == 0)
+        {
+            tmp_atomic.store(0, cuda::memory_order_relaxed);
+        }
+        // cg::invoke_one(block, [&]
+        //                { tmp_atomic.store(0, cuda::memory_order_relaxed); });
         block.sync();
         for (int ii = block.thread_rank(); ii < num_neighs_lvl1; ii += g_const::threads_per_block)
         {
@@ -159,8 +162,12 @@ __device__ void calculateIntersectsPivot(const int v_idx, const int *__restrict_
             }
         }
         block.sync();
-        cg::invoke_one(block, [&]
-                       { tmp_shr_int = tmp_atomic.load(cuda::memory_order_relaxed); });
+        if (block.thread_rank() == 0)
+        {
+            tmp_shr_int = tmp_atomic.load(cuda::memory_order_relaxed);
+        }
+        // cg::invoke_one(block, [&]
+        //                { tmp_shr_int = tmp_atomic.load(cuda::memory_order_relaxed); });
         block.sync();
         const int num_neighs = tmp_shr_int;
         assert(num_neighs <= num_neighs_lvl1);
@@ -256,8 +263,12 @@ __device__ void calculateIntersectsPivot(const int v_idx, const int *__restrict_
         int current_pivot = 0;
         int parity = 0;
         // *************  first level ***********************
-        cg::invoke_one(block, [&]
-                       { lvl_idx[block.group_index().x][0] = 0; });
+        if (block.thread_rank() == 0)
+        {
+            lvl_idx[block.group_index().x][0] = 0;
+        }
+        // cg::invoke_one(block, [&]
+        //                { lvl_idx[block.group_index().x][0] = 0; });
         current_level = 0;
         current_num_pivots = 0;
         current_idx = 0;
@@ -308,13 +319,21 @@ __device__ void calculateIntersectsPivot(const int v_idx, const int *__restrict_
                     temp_pivot_overlap = tmp_shr_int;
                     if (temp_pivot_overlap == pivot_overlap)
                     { // if two tiles' pivots have the same overlap we choose one at random
-                        // tmp_atomic.store(pivot, cuda::memory_order_relaxed);
-                        cg::invoke_one(tile, [&]
-                                       { tmp_atomic.store(pivot, cuda::memory_order_relaxed); });
+                        tmp_atomic.store(pivot, cuda::memory_order_relaxed);
+                        if (tile.thread_rank() == 0)
+                        {
+                            tmp_atomic.store(pivot, cuda::memory_order_relaxed);
+                        };
+                        // cg::invoke_one(tile, [&]
+                        //                { tmp_atomic.store(pivot, cuda::memory_order_relaxed); });
                     }
                     block.sync();
-                    cg::invoke_one(block, [&]
-                                   { tmp_shr_int = tmp_atomic.load(cuda::memory_order_relaxed); });
+                    if (block.thread_rank() == 0)
+                    {
+                        tmp_shr_int = tmp_atomic.load(cuda::memory_order_relaxed);
+                    }
+                    // cg::invoke_one(block, [&]
+                    //                { tmp_shr_int = tmp_atomic.load(cuda::memory_order_relaxed); });
                     block.sync();
                     pivot = tmp_shr_int;
                     pivot_overlap = temp_pivot_overlap;
@@ -374,15 +393,34 @@ __device__ void calculateIntersectsPivot(const int v_idx, const int *__restrict_
                                 lvl_pruned_bitmap[block.group_index().x][current_level][jj] = shr_str2.current_lvl_pruned_bitmap[jj];
                             }
                             parity = !parity;
-                            cg::invoke_one(block, [&]
-                                           { lvl_idx[block.group_index().x][current_level] = ++current_idx; });
-                            cg::invoke_one(block, [&]
-                                           { lvl_num_neighs[block.group_index().x][current_level] = current_num_neighs; });
-                            cg::invoke_one(block, [&]
-                                           { lvl_num_pivots[block.group_index().x][current_level] = current_num_pivots; });
-                            cg::invoke_one(block, [&]
-                                           { lvl_pivot[block.group_index().x][current_level] = current_pivot; });
 
+                            if (block.thread_rank() == 0)
+                            {
+                                lvl_idx[block.group_index().x][current_level] = ++current_idx;
+                            }
+                            if (block.thread_rank() == 0)
+                            {
+                                lvl_num_neighs[block.group_index().x][current_level] = current_num_neighs;
+                            }
+                            if (block.thread_rank() == 0)
+                            {
+                                lvl_num_pivots[block.group_index().x][current_level] = current_num_pivots;
+                            }
+                            if (block.thread_rank() == 0)
+                            {
+                                lvl_pivot[block.group_index().x][current_level] = current_pivot;
+                            }
+
+                            /*
+                             cg::invoke_one(block, [&]
+                                            { lvl_idx[block.group_index().x][current_level] = ++current_idx; });
+                             cg::invoke_one(block, [&]
+                                            { lvl_num_neighs[block.group_index().x][current_level] = current_num_neighs; });
+                             cg::invoke_one(block, [&]
+                                            { lvl_num_pivots[block.group_index().x][current_level] = current_num_pivots; });
+                             cg::invoke_one(block, [&]
+                                            { lvl_pivot[block.group_index().x][current_level] = current_pivot; });
+                             */
                             current_idx = -1;
                             current_num_pivots = new_num_pivots;
                             current_num_neighs = next_num_neighs;
@@ -444,9 +482,18 @@ __device__ void calculateIntersectsPivot(const int v_idx, const int *__restrict_
                                     while (b)
                                     {
                                         int q = a / b;
-                                        stdc::tie(x, x1) = stdc::make_tuple(x1, x - q * x1);
-                                        stdc::tie(y, y1) = stdc::make_tuple(y1, y - q * y1);
-                                        stdc::tie(a, b) = stdc::make_tuple(b, a - q * b);
+                                        // stdc::tie(x, x1) = stdc::make_tuple(x1, x - q * x1); too new
+                                        int temp = x;
+                                        x = x1;
+                                        x1 = temp - q * x1;
+                                        // stdc::tie(y, y1) = stdc::make_tuple(y1, y - q * y1);
+                                        temp = y;
+                                        y = y1;
+                                        y1 = y - q * y1;
+                                        // stdc::tie(a, b) = stdc::make_tuple(b, a - q * b);
+                                        temp = a;
+                                        a = b;
+                                        b = a - q * b;
                                     }
                                     assert(a == 1);
                                     long long res = (x % g_const::mod + g_const::mod) % g_const::mod;
@@ -547,7 +594,7 @@ __device__ void calculateIntersectsPivot(const int v_idx, const int *__restrict_
         }
         block.sync();
     }
-    block_idx = (block_idx + num_neighs_bitmap_lvl1) % g_const::blocks_per_grid_dev; // so spare blocks can start calculating next vertex //todo uncomment and check difference
+    block_idx = (block_idx + num_neighs_bitmap_lvl1) % g_const::blocks_per_grid; // so spare blocks can start calculating next vertex //todo uncomment and check difference
 }
 
 __global__ void countCliquesKernPivot(const int *__restrict__ row_ptrs, const int *__restrict__ v1s, const int *__restrict__ v2s, int *__restrict__ res, const int clique_size)
@@ -555,7 +602,8 @@ __global__ void countCliquesKernPivot(const int *__restrict__ row_ptrs, const in
     int block_idx = blockIdx.x;
     for (int ii = 0; ii < g_const::num_vertices_dev; ii++)
     {
-        // calculateIntersectsPivot<tile_size_pivot>(ii, row_ptrs, v1s, v2s, clique_size, res, block_idx);
+        // calculateIntersectsPivot<tile_size_pivot>(ii, row_ptrs, v1s, v2s, clique_size, res, block_idx); //todo change back
+        calculateIntersectsPivot(ii, row_ptrs, v1s, v2s, clique_size, res, block_idx);
         __syncthreads();
     }
 }
@@ -572,8 +620,6 @@ void countCliquesPivot(Graph &g, int clique_size, std::string output_path)
                                                                0));
     cudaDeviceProp deviceProp;
     cudaGetDeviceProperties(&deviceProp, 0); // 0-th device
-    g_const::blocks_per_grid_host = deviceProp.multiProcessorCount * maxActiveBlocks * 2;
-    HANDLE_ERROR(cudaMemcpyToSymbol(g_const::blocks_per_grid_dev, &g_const::blocks_per_grid_host, sizeof g_const::blocks_per_grid_host));
     countCliquesKernPivot<<<g_const::blocks_per_grid, g_const::threads_per_block>>>(
         thrust::raw_pointer_cast(g.row_ptr.data()),
         thrust::raw_pointer_cast(g.v1s.data()),
