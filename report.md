@@ -40,6 +40,8 @@ Blocks per grid are `(cudaOccupancyMaxActiveBlocksPerMultiprocessor+1)*devicePro
 
 I used an A100 to get the maximum number of blocks that might ever be needed, this was used for static initilization of arrays at the top of `orient.cu` and `pivot.cu`. It still keeps the global memory comfortably below the 4GB I have in my laptop's P1000 so it should be fine for any machine this is run on. I could have done dynamic allocation, but I assumed it introduces corner cases for portability; mainly because of my lack of knowledge of register and memory allocation in optimised machine code compilation.
 
+I both cases a tile size of $4$ seems optimal.
+
 ### file contents
 - `main.cu`
     - is main

@@ -161,3 +161,9 @@ sys     0m0.326s
 real    16m0.706s
 user    15m59.979s
 sys     0m0.323s
+
+
+
+4 skitter at 6
+36.8
+8 skitter at 6
