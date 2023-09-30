@@ -62,6 +62,7 @@ I had to remove:
 - `cuda::std::tie`
 - `cuda::std::make_tuple`
 - `cooperative_groups::invoke_one`
+- `-ffast-math` from nvcc
 
 Since these where added in cuda 12.2 and 12.0 respectivelly so I can't use them on entropy. The code reflects where this happened in the comments.
 

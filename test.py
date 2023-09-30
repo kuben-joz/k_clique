@@ -5,7 +5,7 @@ import subprocess
 
 files = glob.glob("in/input/*.txt")
 res_path = "output.txt"
-prog = "./k-clique"
+prog = "./k-clique-new.out"
 
 print(f"running using {prog}")
 

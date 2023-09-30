@@ -5,7 +5,6 @@
 #include "direct.cuh"
 #include "orient.cuh"
 #include "pivot.cuh"
-//  #include "count_cliques.cuh"
 
 namespace g_const
 {
@@ -25,7 +24,7 @@ int main(int argc, char *argv[])
     directGraph(g);
     // countCliques(g, max_clique, output_path);
 
-    if (max_clique < 7)
+    if (max_clique < 20)
     {
         countCliquesOrient(g, max_clique, output_path);
     }

@@ -1,6 +1,6 @@
 # Project exclude paths
 cmake-build-debug/
-scratch.cpp
+scratch.*
 in/
 out/
 build/
@@ -9,5 +9,7 @@ cmake_install.cmake
 CMakeCache.txt
 k-clique
 kclique
+k-clique-new.out
 output.txt
 tmp.out
+todo.md

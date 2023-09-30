@@ -84,7 +84,12 @@
 			"valarray": "cpp",
 			"variant": "cpp",
 			"__config": "cpp",
-			"__verbose_abort": "cpp"
+			"__verbose_abort": "cpp",
+			"compare": "cpp",
+			"concepts": "cpp",
+			"numbers": "cpp",
+			"semaphore": "cpp",
+			"stop_token": "cpp"
 		},
 	},
 }

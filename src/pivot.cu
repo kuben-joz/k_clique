@@ -621,6 +621,7 @@ void countCliquesPivot(Graph &g, int clique_size, std::string output_path)
     cudaDeviceProp deviceProp;
     cudaGetDeviceProperties(&deviceProp, 0); // 0-th device
     g_const::blocks_per_grid_host = (maxActiveBlocks + 1) * deviceProp.multiProcessorCount * 2;
+    std::cout << "'Optimal' by formula is " << g_const::blocks_per_grid_host << " blocks";
     g_const::blocks_per_grid_host = g_const::blocks_per_grid_host > g_const::blocks_per_grid ? g_const::blocks_per_grid : g_const::blocks_per_grid_host;
     std::cout << "Using " << g_const::blocks_per_grid_host << " blocks of size " << g_const::threads_per_block << " for calculation\n";
     HANDLE_ERROR(cudaMemcpyToSymbol(g_const::blocks_per_grid_dev, &g_const::blocks_per_grid_host, sizeof g_const::blocks_per_grid_host));
