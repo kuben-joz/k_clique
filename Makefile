@@ -1,4 +1,4 @@
-TARGET_EXEC ?= k-clique-new.out
+TARGET_EXEC ?= kcliques
 
 CUDA_ROOT_DIR := /usr/local/cuda
 CXX := $(CUDA_ROOT_DIR)/bin/nvcc

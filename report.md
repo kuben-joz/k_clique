@@ -42,7 +42,7 @@ I used an A100 to get the maximum number of blocks that might ever be needed (~2
 
 I both cases a tile size of $4$ seems optimal.
 
-### file contents
+### File contents
 - `main.cu`
     - is main
 - `input.cu` 
@@ -66,15 +66,15 @@ I had to remove:
 
 Since these where added in cuda 12.2 and 12.0 respectivelly so I can't use them on entropy. The code reflects where this happened in the comments.
 
+### Problems
+The program is IO bound. When I ran it on DGX-A100 with network drive it was a lot slower to read the input than from my SSD. The time to run the tst package (n = ~220) rose from 30 seconds to about 2 minutes.
+
 
 ## Building
-I leave a `Makefile` as well as a `CMakeLists.txt`. The former should work on entropy. But if it doesn't I include below instructions on running the project through singularity, for which I prepared an image.
-
-# TODO
-also chagne to tempaltes
+I leave a `Makefile` as well as a `CMakeLists.txt`. The former should work on entropy. But if it doesn't I included a dockerfile for an image that definately works. I believe there is now access to singularity on Entropy so that might help. I can prepare the pipeline if such a need occurs.
 
 ## Mirrors
-# todo github release version
+https://github.com/kuben-joz/k_clique
 
 
 
