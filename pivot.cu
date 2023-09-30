@@ -318,8 +318,7 @@ __device__ void calculateIntersectsPivot(const int v_idx, const int *__restrict_
                     block.sync();
                     temp_pivot_overlap = tmp_shr_int;
                     if (temp_pivot_overlap == pivot_overlap)
-                    { // if two tiles' pivots have the same overlap we choose one at random
-                        tmp_atomic.store(pivot, cuda::memory_order_relaxed);
+                    { // if two tiles' pivots have the same overlap we choose one at random);
                         if (tile.thread_rank() == 0)
                         {
                             tmp_atomic.store(pivot, cuda::memory_order_relaxed);
