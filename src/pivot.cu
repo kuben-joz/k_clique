@@ -621,7 +621,7 @@ void countCliquesPivot(Graph &g, int clique_size, std::string output_path)
         thrust::raw_pointer_cast(g.v2s.data()),
         thrust::raw_pointer_cast(res_dev.data()),
         clique_size);
-
+    std::cout << "done" << std::endl;
     PRINTER(res_dev);
     res_host = res_dev;
     std::ofstream outfile;

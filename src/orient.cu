@@ -33,14 +33,12 @@ __device__ void calculateIntersectsOrient(int v_idx, int *row_ptrs, int *v1s, in
     static_assert(g_const::max_deg == 1024); // this assumption is made for optimisations here
     cg::thread_group block = cg::this_thread_block();
     __shared__ int neigh_ids[g_const::max_deg];
-
     int start = row_ptrs[v_idx];
     int end = row_ptrs[v_idx + 1];
     const int num_neighs = end - start;
     if (num_neighs == 0)
     {
-        if (block.thread_rank() == 0)
-        {
+        if(block.thread_rank() == 0) {
             int val = 1;
             int expected = 0;
             int desired = val;
@@ -54,6 +52,7 @@ __device__ void calculateIntersectsOrient(int v_idx, int *row_ptrs, int *v1s, in
         }
         return;
     }
+ 
     const int num_neighs_bitmap = (num_neighs + 31) / 32;
     for (int ii = block.thread_rank(); ii < num_neighs; ii += g_const::threads_per_block)
     {
@@ -100,6 +99,7 @@ __device__ void calculateIntersectsOrient(int v_idx, int *row_ptrs, int *v1s, in
     {
         num_cliques_total[ii] = ii == 0;
     }
+
     block.sync();
     __shared__ unsigned int current_lvl_bitmap[num_tiles][(g_const::max_deg + 31) / 32]; // 32 kibibytes so should fit, todo check
     int lvl_idx[g_const::max_clique_size - 1];
@@ -108,17 +108,18 @@ __device__ void calculateIntersectsOrient(int v_idx, int *row_ptrs, int *v1s, in
     for (int ii = tile_idx; ii < num_neighs; ii += num_tiles)
     {
         // *************  first level ***********************
+
         lvl_idx[0] = 0;
         current_level = 0;
         for (int jj = tile.thread_rank(); jj < num_neighs_bitmap; jj += tile_sz)
         {
             current_lvl_bitmap[tile_idx][jj] = neigh_bitmap_orient[blockIdx.x][ii][jj];
         }
-
         if (tile.thread_rank() == 0)
         {
             moduloAdd(num_cliques_total[1], 1);
         }
+        tile.sync();
         // ******************* implicit stack used from here on out *********************
         do
         {
@@ -140,6 +141,7 @@ __device__ void calculateIntersectsOrient(int v_idx, int *row_ptrs, int *v1s, in
                         {
                             moduloAdd(num_cliques_total[current_level + 2], lvl_num_neighs[current_level]);
                         }
+                        tile.sync();
                     }
                     if (current_level == clique_size - 3)
                     { // max depth reached

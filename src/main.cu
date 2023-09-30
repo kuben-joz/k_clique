@@ -24,7 +24,7 @@ int main(int argc, char *argv[])
     directGraph(g);
     // countCliques(g, max_clique, output_path);
 
-    if (max_clique < 4)
+    if (max_clique < 7)
     {
         countCliquesOrient(g, max_clique, output_path);
     }
