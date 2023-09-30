@@ -17,6 +17,9 @@ add_executable(k-clique)
 target_sources(k-clique PRIVATE constants.cuh orient.cu orient.cuh pivot.cu pivot.cuh
                 direct.cu direct.cuh input.cu input.cuh main.cu util.cuh)
 
+#target_sources(k-clique PRIVATE constants.cuh
+#                direct.cu direct.cuh input.cu input.cuh main.cu util.cuh count_cliques.cu count_cliques.cuh)
+
 #set_target_properties(k-clique PROPERTIES
 #    CUDA_SEPARABLE_COMPILATION ON CUDA_ARCHITECTURES "60;61;70;75;80;86")
 #set_target_properties(k-clique PROPERTIES

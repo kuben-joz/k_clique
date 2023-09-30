@@ -5,12 +5,15 @@ import subprocess
 
 files = glob.glob("in/input/*.txt")
 res_path = "output.txt"
+prog = "./k-clique"
+
+print(f"running using {prog}")
 
 start = timer()
 start_sub = start
 for i, f in enumerate(files):
     print(f'starting file {i}, {f}')
-    subprocess.run(["./k-clique", f, "11", res_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run([prog, f, "11", res_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     end = timer()
     ans_path = "in/output/" + f[9:]
     with open(ans_path) as ansf:

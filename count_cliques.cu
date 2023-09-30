@@ -554,8 +554,8 @@ __device__ void calculateIntersectsPivot(const int v_idx, const int *__restrict_
         }
         block.sync();
     }
-    block_idx = (block_idx + num_neighs_bitmap_lvl1) % g_const::blocks_per_grid; // so spare blocks can start calculating next vertex //todo uncomment
-    //  todo chekc this doesnt brake stuff
+    // block_idx = (block_idx + num_neighs_bitmap_lvl1) % g_const::blocks_per_grid; // so spare blocks can start calculating next vertex //todo uncomment
+    //   todo chekc this doesnt brake stuff
 }
 
 __global__ void countCliquesKernPivot(const int *__restrict__ row_ptrs, const int *__restrict__ v1s, const int *__restrict__ v2s, int *__restrict__ res, const int clique_size)

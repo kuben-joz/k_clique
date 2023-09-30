@@ -57,7 +57,7 @@ inline __device__ int numFactors(int n, int p)
 }
 
 // template <int tile_sz>
-const int tile_sz = tile_size_pivot;
+static const int tile_sz = tile_size_pivot;
 
 __device__ void calculateIntersectsPivot(const int v_idx, const int *__restrict__ row_ptrs, const int *__restrict__ v1s, const int *__restrict__ v2s, const int clique_size, int *__restrict__ res, int &block_idx)
 {
@@ -481,18 +481,18 @@ __device__ void calculateIntersectsPivot(const int v_idx, const int *__restrict_
                                     while (b)
                                     {
                                         int q = a / b;
-                                        // stdc::tie(x, x1) = stdc::make_tuple(x1, x - q * x1); too new
+                                        // stdc::tie(x, x1) = stdc::make_tuple(x1, x - q * x1); // too new for cuda 11
                                         int temp = x;
                                         x = x1;
                                         x1 = temp - q * x1;
                                         // stdc::tie(y, y1) = stdc::make_tuple(y1, y - q * y1);
                                         temp = y;
                                         y = y1;
-                                        y1 = y - q * y1;
+                                        y1 = temp - q * y1;
                                         // stdc::tie(a, b) = stdc::make_tuple(b, a - q * b);
                                         temp = a;
                                         a = b;
-                                        b = a - q * b;
+                                        b = temp - q * b;
                                     }
                                     assert(a == 1);
                                     long long res = (x % g_const::mod + g_const::mod) % g_const::mod;
@@ -507,6 +507,7 @@ __device__ void calculateIntersectsPivot(const int v_idx, const int *__restrict_
                             BlockScanT32(shr_str3.scan32).InclusiveSum(temp_fives, temp_fives);
                             block.sync(); // sync because we are reusing same shared mem
                             BlockScanT64(shr_str3.scan64).InclusiveScan(temp_res, temp_res, mod_mul<long long>());
+                            // block.sync(); // sync because we are reusing same shared mem
                             for (int ii = block.thread_rank(); ii < g_const::max_deg; ii += g_const::threads_per_block)
                             {
                                 int k = (per_thread * block.thread_rank() + (ii / g_const::threads_per_block));

@@ -16,7 +16,7 @@ And the libraries:
 
 ### Algorithms
 The implementation uses:
-- Vertex centric graph orientation for queries of $k < 8$, for $7$ this is about 2x faster with skitter as input
+- Vertex centric graph orientation for queries of $k < 7$, $k \leq 7$ could be considered too, it depends on input which is faster. For skitter it's better to use graph orientation, but for dblp pivot is better.
 - Edge centric pivoting for larger size clique searches
 
 Both make use of the degree edge orientation criteria.
@@ -68,6 +68,7 @@ Since these where added in cuda 12.2 and 12.0 respectivelly so I can't use them 
 I leave a `Makefile` as well as a `CMakeLists.txt`. The former should work on entropy. But if it doesn't I include below instructions on running the project through singularity, for which I prepared an image.
 
 # TODO
+also chagne to tempaltes
 
 ## Mirrors
 # todo github release version

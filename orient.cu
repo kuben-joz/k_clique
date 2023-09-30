@@ -11,9 +11,9 @@
 
 namespace cg = cooperative_groups;
 
-const int tile_size_orient = 8;
+const int tile_size_orient = 4;
 
-__device__ unsigned int neigh_bitmasks[g_const::blocks_per_grid][g_const::max_deg][(g_const::max_deg + 31) / 32];
+__device__ unsigned int neigh_bitmap_orient[g_const::blocks_per_grid][g_const::max_deg][(g_const::max_deg + 31) / 32];
 __device__ unsigned int lvl_bitmap_orient[g_const::blocks_per_grid][g_const::threads_per_block / tile_size_orient][g_const::max_clique_size - 4][(g_const::max_deg + 31) / 32];
 
 inline __device__ void modulo_add(cuda::atomic<int, cuda::thread_scope_block> &res, int val)
@@ -27,7 +27,7 @@ inline __device__ void modulo_add(cuda::atomic<int, cuda::thread_scope_block> &r
     } while (!res.compare_exchange_weak(expected, desired, cuda::memory_order_relaxed));
 }
 
-template <int tile_sz>
+static const int tile_sz = tile_size_orient;
 __device__ void calculateIntersectsOrient(int v_idx, int *row_ptrs, int *v1s, int *v2s, int clique_size, int *res)
 {
     static_assert(g_const::max_deg == 1024); // this assumption is made for optimisations here
@@ -86,7 +86,7 @@ __device__ void calculateIntersectsOrient(int v_idx, int *row_ptrs, int *v1s, in
         }
         for (int jj = tile.thread_rank(); jj < num_neighs_bitmap; jj += tile_sz)
         {
-            neigh_bitmasks[blockIdx.x][ii][jj] = current_neigh[jj];
+            neigh_bitmap_orient[blockIdx.x][ii][jj] = current_neigh[jj];
         }
         // tile.sync(); //todo I dont think this is neccesary
     }
@@ -109,10 +109,10 @@ __device__ void calculateIntersectsOrient(int v_idx, int *row_ptrs, int *v1s, in
         current_level = 0;
         for (int jj = tile.thread_rank(); jj < num_neighs_bitmap; jj += tile_sz)
         {
-            current_lvl_bitmap[tile_idx][jj] = neigh_bitmasks[blockIdx.x][ii][jj];
+            current_lvl_bitmap[tile_idx][jj] = neigh_bitmap_orient[blockIdx.x][ii][jj];
         }
 
-        if (!tile.thread_rank())
+        if (tile.thread_rank() == 0)
         {
             modulo_add(num_cliques_total[1], 1);
         }
@@ -133,66 +133,68 @@ __device__ void calculateIntersectsOrient(int v_idx, int *row_ptrs, int *v1s, in
                     lvl_num_neighs[current_level] = cg::reduce(tile, lvl_num_neighs[current_level], cg::plus<int>());
                     if (lvl_num_neighs[current_level] > 0)
                     {
-                        if (!tile.thread_rank())
+                        if (tile.thread_rank() == 0)
                         {
                             modulo_add(num_cliques_total[current_level + 2], lvl_num_neighs[current_level]);
                         }
-                        if (current_level == clique_size - 3)
-                        { // max depth reached
-                            break;
-                        }
                     }
-                    if (lvl_num_neighs[current_level] == 0)
-                    {
+                    if (current_level == clique_size - 3)
+                    { // max depth reached
                         break;
                     }
-                    unsigned int temp = current_lvl_bitmap[tile_idx][idx / 32] & (1U << (idx % 32));
-                    if (temp > 0)
+                }
+
+                if (lvl_num_neighs[current_level] == 0)
+                {
+                    break;
+                }
+                unsigned int temp = current_lvl_bitmap[tile_idx][idx / 32] & (1U << (idx % 32));
+                if (temp > 0)
+                {
+                    lvl_num_neighs[current_level]--;
+                    if (current_level > 0) // saves one transfer into global
                     {
-                        lvl_num_neighs[current_level]--;
-                        if (current_level > 0) // saves one transfer into global
+                        for (int jj = tile.thread_rank(); jj < num_neighs_bitmap; jj += tile_sz)
                         {
-                            for (int jj = tile.thread_rank(); jj < num_neighs_bitmap; jj += tile_sz)
-                            {
-                                lvl_bitmap_orient[blockIdx.x][tile_idx][current_level - 1][jj] = current_lvl_bitmap[tile_idx][jj];
-                                current_lvl_bitmap[tile_idx][jj] = current_lvl_bitmap[tile_idx][jj] & neigh_bitmasks[blockIdx.x][idx][jj];
-                            }
+                            lvl_bitmap_orient[blockIdx.x][tile_idx][current_level - 1][jj] = current_lvl_bitmap[tile_idx][jj];
+                            current_lvl_bitmap[tile_idx][jj] = current_lvl_bitmap[tile_idx][jj] & neigh_bitmap_orient[blockIdx.x][idx][jj];
                         }
-                        else
+                    }
+                    else
+                    {
+                        for (int jj = tile.thread_rank(); jj < num_neighs_bitmap; jj += tile_sz)
                         {
-                            for (int jj = tile.thread_rank(); jj < num_neighs_bitmap; jj += tile_sz)
-                            {
-                                current_lvl_bitmap[tile_idx][jj] = current_lvl_bitmap[tile_idx][jj] & neigh_bitmasks[blockIdx.x][idx][jj];
-                            }
+                            current_lvl_bitmap[tile_idx][jj] = current_lvl_bitmap[tile_idx][jj] & neigh_bitmap_orient[blockIdx.x][idx][jj];
                         }
-                        temp = 0;
-                        idx = 0;
-                        current_level++;
+                    }
+                    temp = 0;
+                    idx = 0;
+                    current_level++;
+                }
+            }
+            do
+            {
+                current_level--;
+            } while (current_level >= 0 && lvl_num_neighs[current_level] == 0);
+            if (current_level >= 0) // putting this here saves clique_size transfers
+            {
+                lvl_idx[current_level + 1] = 0;
+                if (current_level > 0)
+                {
+                    for (int jj = tile.thread_rank(); jj < num_neighs_bitmap; jj += tile_sz)
+                    {
+                        current_lvl_bitmap[tile_idx][jj] = lvl_bitmap_orient[blockIdx.x][tile_idx][current_level - 1][jj]; // -1 as we only store levels greater than 0
                     }
                 }
-                do
-                {
-                    current_level--;
-                } while (current_level >= 0 && lvl_num_neighs[current_level] == 0);
-                if (current_level >= 0) // putting this here saves clique_size transfers
-                {
-                    lvl_idx[current_level + 1] = 0;
-                    if (current_level > 0)
+                else if (current_level == 0)
+                { // doing it this way saves one transfer into global
+                    for (int jj = tile.thread_rank(); jj < num_neighs_bitmap; jj += tile_sz)
                     {
-                        for (int jj = tile.thread_rank(); jj < num_neighs_bitmap; jj += tile_sz)
-                        {
-                            current_lvl_bitmap[tile_idx][jj] = lvl_bitmap_orient[blockIdx.x][tile_idx][current_level - 1][jj]; // -1 as we only store levels greater than 0
-                        }
-                    }
-                    else if (current_level == 0)
-                    { // doing it this way saves one transfer into global
-                        for (int jj = tile.thread_rank(); jj < num_neighs_bitmap; jj += tile_sz)
-                        {
-                            current_lvl_bitmap[tile_idx][jj] = neigh_bitmasks[blockIdx.x][ii][jj];
-                        }
+                        current_lvl_bitmap[tile_idx][jj] = neigh_bitmap_orient[blockIdx.x][ii][jj];
                     }
                 }
             }
+
         } while (current_level >= 0);
         tile.sync();
     }
@@ -216,7 +218,7 @@ __global__ void countCliquesKernOrient(int *row_ptrs, int *v1s, int *v2s, int *r
 {
     for (int ii = blockIdx.x; ii < g_const::num_vertices_dev; ii += gridDim.x)
     {
-        calculateIntersectsOrient<tile_size_orient>(ii, row_ptrs, v1s, v2s, clique_size, res);
+        calculateIntersectsOrient(ii, row_ptrs, v1s, v2s, clique_size, res);
         __syncthreads();
     }
 }
@@ -224,13 +226,6 @@ __global__ void countCliquesKernOrient(int *row_ptrs, int *v1s, int *v2s, int *r
 void countCliquesOrient(Graph &g, int clique_size, std::string output_path)
 {
     thrust::device_vector<int> res_dev(clique_size, 0);
-    int maxActiveBlocks;
-    cudaOccupancyMaxActiveBlocksPerMultiprocessor(&maxActiveBlocks,
-                                                  countCliquesKernOrient, g_const::threads_per_block,
-                                                  0);
-    cudaDeviceProp deviceProp;
-    cudaGetDeviceProperties(&deviceProp, 0); // 0-th device
-    g_const::num_edges_host = deviceProp.multiProcessorCount * maxActiveBlocks * 2;
     countCliquesKernOrient<<<g_const::blocks_per_grid, g_const::threads_per_block>>>(
         thrust::raw_pointer_cast(g.row_ptr.data()),
         thrust::raw_pointer_cast(g.v1s.data()),
