@@ -21,8 +21,11 @@ LDFLAGS += -arch=native
 all: CPPFLAGS += -O3  -DNDEBUG
 all: $(TARGET_EXEC)
 
-debug: CPPFLAGS += -DDEBUG -g -G -dopt=on
-debug: $(BUILD_DIR)/$(TARGET_EXEC)
+debug: CPPFLAGS += -O3 -DDEBUG -g -G -dopt=on
+debug: $(TARGET_EXEC)
+
+debugslow: CPPFLAGS +=  -DDEBUG -g -G
+debugslow: $(TARGET_EXEC)
 
 
 $(TARGET_EXEC): $(OBJS)
