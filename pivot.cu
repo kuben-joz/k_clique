@@ -108,7 +108,7 @@ __device__ void calculateIntersectsPivot(const int v_idx, const int *__restrict_
     }
     block.sync();
     // ###################################################################################################################
-    for (int bb = block_idx; bb < num_neighs_lvl1; bb += g_const::blocks_per_grid)
+    for (int bb = block_idx; bb < num_neighs_lvl1; bb += g_const::blocks_per_grid_dev)
     {
 
         __shared__ int neigh_ids[g_const::max_deg];
@@ -594,7 +594,7 @@ __device__ void calculateIntersectsPivot(const int v_idx, const int *__restrict_
         }
         block.sync();
     }
-    block_idx = (block_idx + num_neighs_bitmap_lvl1) % g_const::blocks_per_grid; // so spare blocks can start calculating next vertex //todo uncomment and check difference
+    block_idx = (block_idx + num_neighs_bitmap_lvl1) % g_const::blocks_per_grid_dev; // so spare blocks can start calculating next vertex //todo uncomment and check difference
 }
 
 __global__ void countCliquesKernPivot(const int *__restrict__ row_ptrs, const int *__restrict__ v1s, const int *__restrict__ v2s, int *__restrict__ res, const int clique_size)
@@ -620,7 +620,12 @@ void countCliquesPivot(Graph &g, int clique_size, std::string output_path)
                                                                0));
     cudaDeviceProp deviceProp;
     cudaGetDeviceProperties(&deviceProp, 0); // 0-th device
-    countCliquesKernPivot<<<g_const::blocks_per_grid, g_const::threads_per_block>>>(
+    g_const::blocks_per_grid_host = (maxActiveBlocks + 1) * deviceProp.multiProcessorCount * 2;
+    g_const::blocks_per_grid_host = g_const::blocks_per_grid_host > g_const::blocks_per_grid ? g_const::blocks_per_grid : g_const::blocks_per_grid_host;
+    std::cout << "Using " << g_const::blocks_per_grid_host << " blocks of size " << g_const::threads_per_block << " for calculation\n";
+    HANDLE_ERROR(cudaMemcpyToSymbol(g_const::blocks_per_grid_dev, &g_const::blocks_per_grid_host, sizeof g_const::blocks_per_grid_host));
+    assert(g_const::blocks_per_grid_host > 0);
+    countCliquesKernPivot<<<g_const::blocks_per_grid_host, g_const::threads_per_block>>>(
         thrust::raw_pointer_cast(g.row_ptr.data()),
         thrust::raw_pointer_cast(g.v1s.data()),
         thrust::raw_pointer_cast(g.v2s.data()),

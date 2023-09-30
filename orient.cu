@@ -226,7 +226,18 @@ __global__ void countCliquesKernOrient(int *row_ptrs, int *v1s, int *v2s, int *r
 void countCliquesOrient(Graph &g, int clique_size, std::string output_path)
 {
     thrust::device_vector<int> res_dev(clique_size, 0);
-    countCliquesKernOrient<<<g_const::blocks_per_grid, g_const::threads_per_block>>>(
+    cudaDeviceProp deviceProp;
+    cudaGetDeviceProperties(&deviceProp, 0); // 0-th device
+    int maxActiveBlocks;
+    HANDLE_ERROR(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&maxActiveBlocks,
+                                                               countCliquesKernOrient, g_const::threads_per_block,
+                                                               0));
+    g_const::blocks_per_grid_host = (maxActiveBlocks + 1) * deviceProp.multiProcessorCount * 2;
+    g_const::blocks_per_grid_host = g_const::blocks_per_grid_host > g_const::blocks_per_grid ? g_const::blocks_per_grid : g_const::blocks_per_grid_host;
+    std::cout << "Using " << g_const::blocks_per_grid_host << " blocks of size " << g_const::threads_per_block << " for calculation\n";
+    HANDLE_ERROR(cudaMemcpyToSymbol(g_const::blocks_per_grid_dev, &g_const::blocks_per_grid_host, sizeof g_const::blocks_per_grid_host));
+    assert(g_const::blocks_per_grid_host > 0);
+    countCliquesKernOrient<<<g_const::blocks_per_grid_host, g_const::threads_per_block>>>(
         thrust::raw_pointer_cast(g.row_ptr.data()),
         thrust::raw_pointer_cast(g.v1s.data()),
         thrust::raw_pointer_cast(g.v2s.data()),

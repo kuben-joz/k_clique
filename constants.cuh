@@ -9,6 +9,8 @@ namespace g_const
     extern int num_vertices_host;
     const int max_deg = 1024;
     const int max_clique_size = 12;
-    const int threads_per_block = 128; // todo orginally 128
-    const int blocks_per_grid = 32;    // todo originally 32
+    const int threads_per_block = 128;
+    const int blocks_per_grid = 64; // todo max for a100
+    extern int blocks_per_grid_host;
+    extern __constant__ int blocks_per_grid_dev;
 }
