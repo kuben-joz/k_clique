@@ -25,17 +25,6 @@ __device__ int lvl_num_neighs[g_const::blocks_per_grid][g_const::max_deg];
 __device__ int lvl_num_pivots[g_const::blocks_per_grid][g_const::max_deg];
 __device__ int lvl_pivot[g_const::blocks_per_grid][g_const::max_deg];
 
-inline __device__ void moduloAdd(cuda::atomic<int, cuda::thread_scope_block> &res, int val)
-{
-    val = val % g_const::mod;
-    int expected = res.load(cuda::memory_order_relaxed);
-    int desired;
-    do
-    {
-        desired = (expected + val) % g_const::mod;
-    } while (!res.compare_exchange_weak(expected, desired, cuda::memory_order_relaxed));
-}
-
 // computes number of factors of p in n choose k
 inline __device__ int numFactors(int n, int p)
 {
@@ -621,7 +610,7 @@ void countCliquesPivot(Graph &g, int clique_size, std::string output_path)
     cudaDeviceProp deviceProp;
     cudaGetDeviceProperties(&deviceProp, 0); // 0-th device
     g_const::blocks_per_grid_host = (maxActiveBlocks + 1) * deviceProp.multiProcessorCount * 2;
-    std::cout << "'Optimal' by formula is " << g_const::blocks_per_grid_host << " blocks";
+    std::cout << "'Optimal' by formula is " << g_const::blocks_per_grid_host << " blocks\n";
     g_const::blocks_per_grid_host = g_const::blocks_per_grid_host > g_const::blocks_per_grid ? g_const::blocks_per_grid : g_const::blocks_per_grid_host;
     std::cout << "Using " << g_const::blocks_per_grid_host << " blocks of size " << g_const::threads_per_block << " for calculation\n";
     HANDLE_ERROR(cudaMemcpyToSymbol(g_const::blocks_per_grid_dev, &g_const::blocks_per_grid_host, sizeof g_const::blocks_per_grid_host));

@@ -16,15 +16,15 @@ const int tile_size_orient = 4;
 __device__ unsigned int neigh_bitmap_orient[g_const::blocks_per_grid][g_const::max_deg][(g_const::max_deg + 31) / 32];
 __device__ unsigned int lvl_bitmap_orient[g_const::blocks_per_grid][g_const::threads_per_block / tile_size_orient][g_const::max_clique_size - 4][(g_const::max_deg + 31) / 32];
 
-inline __device__ void modulo_add(cuda::atomic<int, cuda::thread_scope_block> &res, int val)
+inline __device__ void moduloAdd(cuda::atomic<int, cuda::thread_scope_block> &res, int val)
 {
     val = val % g_const::mod;
-    int expected = res;
+    int expected = res.load(cuda::memory_order_relaxed);
     int desired;
     do
     {
         desired = (expected + val) % g_const::mod;
-    } while (!res.compare_exchange_weak(expected, desired, cuda::memory_order_relaxed));
+    } while (!res.compare_exchange_weak(expected, desired, cuda::memory_order_acq_rel));
 }
 
 static const int tile_sz = tile_size_orient;
@@ -37,17 +37,20 @@ __device__ void calculateIntersectsOrient(int v_idx, int *row_ptrs, int *v1s, in
     int start = row_ptrs[v_idx];
     int end = row_ptrs[v_idx + 1];
     const int num_neighs = end - start;
-    if (num_neighs == 0 && block.thread_rank() == 0)
+    if (num_neighs == 0)
     {
-        int val = 1;
-        int expected = 0;
-        int desired = val;
-        int old = atomicCAS(&res[0], expected, desired);
-        while (old != expected)
+        if (block.thread_rank() == 0)
         {
-            expected = old;
-            desired = (old + val) % g_const::mod;
-            old = atomicCAS(&res[0], expected, desired);
+            int val = 1;
+            int expected = 0;
+            int desired = val;
+            int old = atomicCAS(&res[0], expected, desired);
+            while (old != expected)
+            {
+                expected = old;
+                desired = (old + val) % g_const::mod;
+                old = atomicCAS(&res[0], expected, desired);
+            }
         }
         return;
     }
@@ -114,7 +117,7 @@ __device__ void calculateIntersectsOrient(int v_idx, int *row_ptrs, int *v1s, in
 
         if (tile.thread_rank() == 0)
         {
-            modulo_add(num_cliques_total[1], 1);
+            moduloAdd(num_cliques_total[1], 1);
         }
         // ******************* implicit stack used from here on out *********************
         do
@@ -135,7 +138,7 @@ __device__ void calculateIntersectsOrient(int v_idx, int *row_ptrs, int *v1s, in
                     {
                         if (tile.thread_rank() == 0)
                         {
-                            modulo_add(num_cliques_total[current_level + 2], lvl_num_neighs[current_level]);
+                            moduloAdd(num_cliques_total[current_level + 2], lvl_num_neighs[current_level]);
                         }
                     }
                     if (current_level == clique_size - 3)
@@ -233,8 +236,8 @@ void countCliquesOrient(Graph &g, int clique_size, std::string output_path)
                                                                countCliquesKernOrient, g_const::threads_per_block,
                                                                0));
     g_const::blocks_per_grid_host = (maxActiveBlocks + 1) * deviceProp.multiProcessorCount * 2;
+    std::cout << "'Optimal' by formula is " << g_const::blocks_per_grid_host << " blocks\n";
     g_const::blocks_per_grid_host = g_const::blocks_per_grid_host > g_const::blocks_per_grid ? g_const::blocks_per_grid : g_const::blocks_per_grid_host;
-    std::cout << "'Optimal' by formula is " << g_const::blocks_per_grid_host << " blocks";
     std::cout << "Using " << g_const::blocks_per_grid_host << " blocks of size " << g_const::threads_per_block << " for calculation\n";
     HANDLE_ERROR(cudaMemcpyToSymbol(g_const::blocks_per_grid_dev, &g_const::blocks_per_grid_host, sizeof g_const::blocks_per_grid_host));
     assert(g_const::blocks_per_grid_host > 0);

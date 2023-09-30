@@ -31,14 +31,14 @@ Both implementations use bitmaps as decribed in the publication.. Wherether poss
 
 I tried to maximise usage of `__shared__` memory by using unions of shared storage for different things. One optimisation I didn't do was remember the current level bitmap for n levels instead of just 2 to reduce the number of transfers into the artifical recursion stack, which has to be in global memory. This applies only to the pivot kernel.
 
-I tried to use `const` and `restrict` where possible to allow the compiler better optimisation
+I tried to use `const` and `restrict` where possible to allow the compiler better optimisation.
 
 ### Parameter Selection
 Seems like 128 threads per block are optimal.
 
 Blocks per grid are `(cudaOccupancyMaxActiveBlocksPerMultiprocessor+1)*deviceProp.multiProcessorCount*2` this seems close to optimal for the GPUs I tried, but I didn't have access to entropy in the end. The makefile generates code for all GPUs that this will likely be run on.
 
-I used an A100 to get the maximum number of blocks that might ever be needed, this was used for static initilization of arrays at the top of `orient.cu` and `pivot.cu`. It still keeps the global memory comfortably below the 4GB I have in my laptop's P1000 so it should be fine for any machine this is run on. I could have done dynamic allocation, but I assumed it introduces corner cases for portability; mainly because of my lack of knowledge of register and memory allocation in optimised machine code compilation.
+I used an A100 to get the maximum number of blocks that might ever be needed (~2GB), this was used for static initilization of arrays at the top of `orient.cu` and `pivot.cu`. It still keeps the global memory comfortably below the 4GB I have in my laptop's P1000 so it should be fine for any machine this is run on. I could have done dynamic allocation, but I assumed it introduces corner cases for portability; mainly because of my lack of knowledge of register and memory allocation in optimised machine code compilation.
 
 I both cases a tile size of $4$ seems optimal.
 
