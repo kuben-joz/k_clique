@@ -45,9 +45,7 @@ inline __device__ int numFactors(int n, int p)
     return s_n;
 }
 
-// template <int tile_sz>
-static const int tile_sz = tile_size_pivot;
-
+template <int tile_sz>
 __device__ void calculateIntersectsPivot(const int v_idx, const int *__restrict__ row_ptrs, const int *__restrict__ v1s, const int *__restrict__ v2s, const int clique_size, int *__restrict__ res, int &block_idx)
 {
     static_assert(g_const::max_deg == 1024); // this assumption is made for optimisations here
@@ -591,8 +589,7 @@ __global__ void countCliquesKernPivot(const int *__restrict__ row_ptrs, const in
     int block_idx = blockIdx.x;
     for (int ii = 0; ii < g_const::num_vertices_dev; ii++)
     {
-        // calculateIntersectsPivot<tile_size_pivot>(ii, row_ptrs, v1s, v2s, clique_size, res, block_idx); //todo change back
-        calculateIntersectsPivot(ii, row_ptrs, v1s, v2s, clique_size, res, block_idx);
+        calculateIntersectsPivot<tile_size_pivot>(ii, row_ptrs, v1s, v2s, clique_size, res, block_idx);
         __syncthreads();
     }
 }

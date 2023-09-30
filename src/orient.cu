@@ -27,7 +27,7 @@ inline __device__ void moduloAdd(cuda::atomic<int, cuda::thread_scope_block> &re
     } while (!res.compare_exchange_weak(expected, desired, cuda::memory_order_acq_rel));
 }
 
-static const int tile_sz = tile_size_orient;
+template <int tile_sz>
 __device__ void calculateIntersectsOrient(int v_idx, int *row_ptrs, int *v1s, int *v2s, int clique_size, int *res)
 {
     static_assert(g_const::max_deg == 1024); // this assumption is made for optimisations here
@@ -38,7 +38,8 @@ __device__ void calculateIntersectsOrient(int v_idx, int *row_ptrs, int *v1s, in
     const int num_neighs = end - start;
     if (num_neighs == 0)
     {
-        if(block.thread_rank() == 0) {
+        if (block.thread_rank() == 0)
+        {
             int val = 1;
             int expected = 0;
             int desired = val;
@@ -52,7 +53,7 @@ __device__ void calculateIntersectsOrient(int v_idx, int *row_ptrs, int *v1s, in
         }
         return;
     }
- 
+
     const int num_neighs_bitmap = (num_neighs + 31) / 32;
     for (int ii = block.thread_rank(); ii < num_neighs; ii += g_const::threads_per_block)
     {
@@ -223,7 +224,7 @@ __global__ void countCliquesKernOrient(int *row_ptrs, int *v1s, int *v2s, int *r
 {
     for (int ii = blockIdx.x; ii < g_const::num_vertices_dev; ii += gridDim.x)
     {
-        calculateIntersectsOrient(ii, row_ptrs, v1s, v2s, clique_size, res);
+        calculateIntersectsOrient<tile_size_orient>(ii, row_ptrs, v1s, v2s, clique_size, res);
         __syncthreads();
     }
 }
